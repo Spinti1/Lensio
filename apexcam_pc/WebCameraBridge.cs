@@ -27,15 +27,23 @@ namespace ApexCam
         private readonly Dictionary<string,Device> devices=new Dictionary<string,Device>();
         private readonly HashSet<TcpClient> requests=new HashSet<TcpClient>();
         private TcpListener listener; private volatile bool running;
-        private readonly int videoPort; private readonly string token; private int port;
+        private readonly int videoPort; private readonly string token,pairingRoom,hostProof; private int port;
         private System.Threading.Timer watchdog;
         [DllImport("kernel32.dll",SetLastError=true)] private static extern bool SetHandleInformation(IntPtr h,uint mask,uint flags);
-        public WebCameraBridge(int videoPort) {
+        public WebCameraBridge(int videoPort,string pairingDirectory=null) {
             this.videoPort=videoPort;
             var bytes=new byte[32];using(var rng=RandomNumberGenerator.Create())rng.GetBytes(bytes);
             token=BitConverter.ToString(bytes).Replace("-","").ToLowerInvariant();
+            string stored=null;
+            if(pairingDirectory!=null){try{string path=Path.Combine(pairingDirectory,"web-pairing.key");if(File.Exists(path)){string text=File.ReadAllText(path).Trim();if(System.Text.RegularExpressions.Regex.IsMatch(text,"^[a-f0-9]{64}$"))stored=text;}if(stored==null){rngFill(bytes);stored=BitConverter.ToString(bytes).Replace("-","").ToLowerInvariant();Directory.CreateDirectory(pairingDirectory);File.WriteAllText(path,stored);}}catch{}}
+            if(stored==null){rngFill(bytes);stored=BitConverter.ToString(bytes).Replace("-","").ToLowerInvariant();}
+            hostProof=stored;
+            using(var sha=SHA256.Create())pairingRoom=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(hostProof))).Replace("-","").ToLowerInvariant();
         }
+        private static void rngFill(byte[] bytes){using(var rng=RandomNumberGenerator.Create())rng.GetBytes(bytes);}
         public string ReceiverUrl {get{return "http://127.0.0.1:"+port+"/receiver#token="+token;}}
+        public string PairingLink {get{return "https://spinti1.github.io/Lensio/?v=6#room="+pairingRoom;}}
+        public string EngineUrl {get{return "http://127.0.0.1:"+port+"/engine#token="+token+"&room="+pairingRoom+"&host="+hostProof;}}
         public void Start(){
             if(running)return;
             listener=new TcpListener(IPAddress.Loopback,0);SetHandleInformation(listener.Server.Handle,1,0);
@@ -59,7 +67,7 @@ namespace ApexCam
         private static string Text(Dictionary<string,object> d,string key){object v;return d.TryGetValue(key,out v)&&v is string?(string)v:"";}
         private static int HeaderInt(Dictionary<string,string> h,string key,int min,int max){string s;int v;if(!h.TryGetValue(key,out s)||!int.TryParse(s,out v)||v<min||v>max)throw new InvalidDataException();return v;}
         private void Reply(Stream s,int status,string type,byte[] body){
-            string head="HTTP/1.1 "+status+" "+(status==200?"OK":status==204?"No Content":status==401?"Unauthorized":"Bad Request")+"\r\nContent-Type: "+type+"\r\nContent-Length: "+body.Length+"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' wss://lensio-connect.pex-am.workers.dev; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'\r\n\r\n";
+            string head="HTTP/1.1 "+status+" "+(status==200?"OK":status==204?"No Content":status==401?"Unauthorized":"Bad Request")+"\r\nContent-Type: "+type+"\r\nContent-Length: "+body.Length+"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' wss://lensio-connect.pex-am.workers.dev; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'\r\n\r\n";
             var bytes=Encoding.ASCII.GetBytes(head);s.Write(bytes,0,bytes.Length);if(body.Length>0)s.Write(body,0,body.Length);
         }
         private void Handle(TcpClient c){
@@ -68,8 +76,8 @@ namespace ApexCam
                 for(int i=0;i<40;i++){string line=Line(s,2048);total+=line.Length;if(total>8192)throw new InvalidDataException();if(line.Length==0)break;int colon=line.IndexOf(':');if(colon<1 || i==39)throw new InvalidDataException();h[line.Substring(0,colon)]=line.Substring(colon+1).Trim();}
                 string host;if(!h.TryGetValue("Host",out host)||host!="127.0.0.1:"+port)throw new InvalidDataException();
                 if(method=="GET"){
-                    string asset=path=="/receiver"?"index.html":path.TrimStart('/'),type="";
-                    switch(asset){case "index.html":type="text/html; charset=utf-8";break;case "config.json":type="application/json";break;case "auto-connect.js":case "app.js":case "protocol.js":type="text/javascript; charset=utf-8";break;case "style.css":type="text/css";break;case "manifest.webmanifest":type="application/manifest+json";break;case "icon.svg":type="image/svg+xml";break;default:throw new InvalidDataException();}
+                    string asset=path=="/receiver"?"index.html":path=="/engine"?"engine.html":path.TrimStart('/'),type="";
+                    switch(asset){case "engine.html":case "index.html":type="text/html; charset=utf-8";break;case "config.json":type="application/json";break;case "qrcode.js":case "track-receiver.js":case "native-receiver.js":case "auto-connect.js":case "app.js":case "protocol.js":type="text/javascript; charset=utf-8";break;case "style.css":type="text/css";break;case "manifest.webmanifest":type="application/manifest+json";break;case "icon.svg":type="image/svg+xml";break;default:throw new InvalidDataException();}
                     using(var resource=Assembly.GetExecutingAssembly().GetManifestResourceStream("LensioWeb."+asset)){
                         if(resource==null)throw new InvalidDataException();using(var ms=new MemoryStream()){resource.CopyTo(ms);Reply(s,200,type,ms.ToArray());}}
                     return;

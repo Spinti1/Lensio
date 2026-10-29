@@ -10,11 +10,13 @@ LensioCam turns Android phones into wireless webcams. LensioStudio brings them t
 - Keep streaming with the phone screen off; stop explicitly from the app or notification.
 - Get updates from GitHub Releases with SHA-256 integrity checks.
 
-## iPhone / Web preview
+## Android / iPhone web preview
 
-**[Open LensioCam Web](https://spinti1.github.io/Lensio/)** in Safari. No native iOS installation, Apple Developer subscription, or IPA renewal is needed.
+Use the [Windows QR-preview build](https://github.com/Spinti1/Lensio/releases/tag/v2.9.0-web.6). LensioStudio shows a QR code inside its Camera and Audio panel. Scan that same QR with one or several Android phones or iPhones and press **Start camera & connect**. Each phone appears automatically as its own source. No PC browser window, Add phone button, copied pairing links or return codes are required.
 
-Use the [Windows web-preview build](https://github.com/Spinti1/Lensio/releases/tag/v2.9.0-web.4), then open the simple link above on your iPhone and press **Start camera**. The Windows receiver opens automatically: select the phone name and accept the request on the phone. No codes need to be copied. Keep both devices on the same Wi-Fi, Safari visible with the iPhone screen on, and the PC receiver window open and visible. This first preview supports video; microphone and PC audio remain Android features. Real Safari/device performance still needs validation. Read the [setup, limitations and privacy notes](docs/WEB_CAMERA.md).
+On a small window, select **Scan QR** in the panel header; click the QR to enlarge it. The website runs only on the phones. Keep the phones on the same Wi-Fi, with their camera page visible and screen on. Android's native LensioCam app still connects automatically over Wi-Fi or USB (ADB). Web-camera video is received by an internal Microsoft WebView2 engine; Windows 10/11 with the Evergreen WebView2 Runtime is required. The normal four-camera limit applies across native and web phones together.
+
+The phone remembers the paired PC after a successful connection. Opening the normal [LensioCam Web](https://spinti1.github.io/Lensio/) page and pressing Start reconnects to that PC; scanning another PC's QR selects a different PC. This preview supports video; microphone and PC audio remain native Android features. See [setup, limitations and privacy](docs/WEB_CAMERA.md).
 
 ## Get started
 

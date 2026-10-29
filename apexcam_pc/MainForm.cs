@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -1812,8 +1812,8 @@ namespace ApexCam
                 receiver.OnDeviceFrameReceived += ProcessDeviceFrame;
 
                 receiver.Start();
-                try { webCameraBridge=new WebCameraBridge(receiver.BoundPort);webCameraBridge.Start();
-                    SafeBeginInvoke(()=> {try {System.Diagnostics.Process.Start(webCameraBridge.ReceiverUrl);}catch{}});
+                try { webCameraBridge=new WebCameraBridge(receiver.BoundPort,workspaceDirectory);webCameraBridge.Start();
+                    SafeBeginInvoke(()=>StartEmbeddedReceiver());
                 }
                 catch { if(webCameraBridge!=null)webCameraBridge.Dispose();webCameraBridge=null; }
                 try { AdbTunnel.SetupPortForwarding(); } catch { }
@@ -2506,6 +2506,7 @@ namespace ApexCam
             Cleanup(() => { if (updateServer != null) updateServer.Dispose(); });
             Cleanup(() => { if (mjpegReceiver != null) mjpegReceiver.Dispose(); });
             Cleanup(() => { if (beacon != null) beacon.Dispose(); });
+            Cleanup(() => { if (embeddedWebReceiver != null) embeddedWebReceiver.Dispose(); });
             Cleanup(() => { if (webCameraBridge != null) webCameraBridge.Dispose(); });
             Cleanup(() => { if (receiver != null) receiver.Dispose(); });
             Cleanup(() => { if (vcamBridge != null) vcamBridge.Dispose(); });

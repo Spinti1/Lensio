@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -100,7 +100,7 @@ namespace ApexCam
             panels.DropDownItems.Add("Sources", null, (s,e) => lbSources.Focus());
             panels.DropDownItems.Add("Filters", null, (s,e) => cbPresets.Focus());
             panels.DropDownItems.Add("Camera / Audio", null, (s,e) => btnRes720p.Focus());
-            panels.DropDownItems.Add("Add phone...", null, (s,e) => ShowAddPhoneMenu());
+
             var actions = new ToolStripDropDownButton("Image");
             actions.DropDownItems.Add("Mirror", null, (s,e) => { mirrorH = !mirrorH; });
             actions.DropDownItems.Add("Flip", null, (s,e) => { flipV = !flipV; });

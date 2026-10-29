@@ -33,6 +33,10 @@ class WebCameraBridgeSmoke {
                     Check(wc.DownloadString(root+"/auto-connect.js?v=20261029-4").Contains("class AutoConnect"),"Versioned discovery module cannot load");
                     Check(wc.DownloadString(root+"/config.json").Contains("https://lensio-connect.pex-am.workers.dev"),"Discovery endpoint missing");
                     Check(wc.DownloadString(root+"/config.json?v=20261029-4").Contains("https://lensio-connect.pex-am.workers.dev"),"Versioned configuration missing");
+                    Check(wc.DownloadString(root+"/engine").Contains("native-receiver.js"),"Native engine page missing");
+                    Check(wc.DownloadString(root+"/native-receiver.js?v=6").Contains("MediaStreamTrackProcessor"),"Background capture missing");
+                    Check(wc.DownloadString(root+"/track-receiver.js").Contains("OffscreenCanvas"),"Background worker missing");
+                    Check(wc.DownloadString(root+"/qrcode.js").Contains("export default qrcode"),"Local QR generator missing");
                 }
                 string catalog="{\"id\":\"web:test\",\"name\":\"Test iPhone\",\"activeId\":\"default\",\"cameras\":[{\"id\":\"default\",\"label\":\"Back camera\",\"selectable\":true}]}";
                 Reject(()=>Post("/register",Encoding.UTF8.GetBytes(catalog),false),401);

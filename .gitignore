@@ -84,6 +84,8 @@ test-data/
 .wrangler/
 .dev.vars
 .dev.vars.*
+*.nupkg
+web-pairing.key
 workspace.json
 phone-names.txt
 *.tmp

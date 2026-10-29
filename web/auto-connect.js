@@ -1,11 +1,11 @@
 // A short-lived discovery socket carries SDP only. Video uses the existing direct peer.
 export class AutoConnect {
-  constructor({endpoint,role,name,onDevices,onRequest,onAnswer,onGone,onStatus,onDiagnostic}){
-    Object.assign(this,{endpoint,role,name,onDevices,onRequest,onAnswer,onGone,onStatus,onDiagnostic});this.closed=false;this.timer=null;this.retry=null;this.socket=null;this.open();
+  constructor({endpoint,role,name,room,hostProof,onDevices,onRequest,onAnswer,onGone,onStatus,onDiagnostic}){
+    Object.assign(this,{endpoint,role,name,room,hostProof,onDevices,onRequest,onAnswer,onGone,onStatus,onDiagnostic});this.closed=false;this.timer=null;this.retry=null;this.socket=null;this.open();
   }
   open(){
     if(this.closed)return;
-    const ws=new WebSocket(this.endpoint.replace(/^https:/,'wss:')+'/signal');this.socket=ws;
+    const ws=new WebSocket(this.endpoint.replace(/^https:/,'wss:')+'/signal'+(this.room?'?room='+encodeURIComponent(this.room)+(this.hostProof?'&host='+encodeURIComponent(this.hostProof):''):''));this.socket=ws;
     this.onDiagnostic?.('Connecting to discovery service…');
     ws.onopen=()=>{if(ws!==this.socket)return;this.onStatus(this.role==='phone'?'Camera is discoverable. Select this phone on your PC.':'Looking for devices…');this.send({kind:'hello',role:this.role,name:this.name});this.timer=setInterval(()=>{if(this.socket?.readyState===WebSocket.OPEN)this.send({kind:'ping'});},25000);};
     ws.onmessage=async e=>{
@@ -14,8 +14,8 @@ export class AutoConnect {
         if(v.kind==='welcome')this.onDiagnostic?.('Discovery online · '+(v.family||'network')+' · '+(v.network||'connected'));
         else if(v.kind==='devices')this.onDevices?.(v.devices);
         else if(v.kind==='request')await this.onRequest?.(v);
-        else if(v.kind==='answer')await this.onAnswer?.(v.answer);
-        else if(v.kind==='gone')this.onGone?.();
+        else if(v.kind==='answer')await this.onAnswer?.(v.answer,v.id);
+        else if(v.kind==='gone')this.onGone?.(v.id);
         else if(v.kind==='error')this.onStatus(v.message);
       }catch(e){this.onStatus(e.message);this.cancel();}
     };
@@ -25,6 +25,6 @@ export class AutoConnect {
   send(value){if(this.socket?.readyState!==WebSocket.OPEN)throw new Error('Discovery is connecting. Try again in a moment.');this.socket.send(JSON.stringify(value));}
   request(id,offer){this.send({kind:'request',target:id,offer});}
   answer(answer){this.send({kind:'answer',answer});}
-  cancel(){if(this.socket?.readyState===WebSocket.OPEN)this.send({kind:'cancel'});}
+  cancel(target){if(this.socket?.readyState===WebSocket.OPEN)this.send({kind:'cancel',...(target?{target}:{})});}
   close(){this.closed=true;clearInterval(this.timer);clearTimeout(this.retry);this.socket?.close();this.socket=null;}
 }

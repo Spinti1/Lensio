@@ -1,9 +1,11 @@
 import {encodeCode,decodeCode,gatherIce} from './protocol.js';
-import {AutoConnect} from './auto-connect.js?v=20261029-5';
+import {AutoConnect} from './auto-connect.js?v=6';
 const $=id=>document.getElementById(id);
 const local=$('localVideo'),remote=$('remoteVideo');
 const receiver=location.pathname==='/receiver' && location.hostname==='127.0.0.1';
 const params=new URLSearchParams(location.hash.slice(1)),token=params.get('token');
+const scannedRoom=params.get('room');
+const pairRoom=/^[a-f0-9]{64}$/.test(scannedRoom||'')?scannedRoom:recalled('pairRoom','');
 const PUBLIC_URL='https://spinti1.github.io/Lensio/';
 const receiverSession=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
 let peer,channel,stream,wake,stopped=true,bridgeId,postBusy=false,frameHandle,pollTimer;
@@ -74,7 +76,7 @@ function makePeer(){
   pc.addEventListener('connectionstatechange',()=>{
     if(pc!==peer)return;
     const s=pc.connectionState;state(s==='connected'?'Streaming':s==='failed'?'Connection failed':s);
-    if(s==='connected'){if(!receiver)$('pairing').open=false;$('message').textContent='';}
+    if(s==='connected'){if(!receiver)$('pairing').open=false;if(/^[a-f0-9]{64}$/.test(pairRoom||''))remember('pairRoom',pairRoom);$('message').textContent='';}
     if(s==='failed'){error(new Error('Connection failed. Check both devices are on the same Wi-Fi, without client isolation, and create a new pairing code.'));if(receiver && bridgeId)bridge('/disconnect',JSON.stringify({id:bridgeId})).catch(()=>{});}
   });
   return pc;
@@ -121,7 +123,7 @@ async function createOffer(autoTarget=null){
 function startDiscovery(){
   if(discovery || !discoveryEndpoint || (!receiver&&!stream))return;
   $('autoPanel').hidden=false;
-  discovery=new AutoConnect({endpoint:discoveryEndpoint,role:receiver?'host':'phone',name:receiver?'LensioStudio on Windows':$('phoneName').value,
+  discovery=new AutoConnect({endpoint:discoveryEndpoint,room:/^[a-f0-9]{64}$/.test(pairRoom||'')?pairRoom:undefined,role:receiver?'host':'phone',name:receiver?'LensioStudio on Windows':$('phoneName').value,
     onStatus:text=>$('autoStatus').textContent=text,
     onDiagnostic:text=>$('autoDiagnostic').textContent=text,
     onDevices:devices=>{
@@ -129,7 +131,8 @@ function startDiscovery(){
       $('autoStatus').textContent=devices.length?'Select your phone. Accept the request on its screen.':'Waiting for a phone. Open LensioCam Web in Safari and press Start camera.';
       for(const d of devices){const b=document.createElement('button');b.textContent='Connect '+d.name;b.className='primary';b.onclick=async()=>{b.disabled=true;try{discovery.cancel();await createOffer(d.id);}catch(e){error(e);b.disabled=false;}};$('autoDevices').append(b);}
     },
-    onRequest:request=>{
+    onRequest:async request=>{
+      if(/^[a-f0-9]{64}$/.test(pairRoom||'')){$('autoStatus').textContent='Connecting to your paired LensioStudio…';await createAnswer(request.offer);return;}
       pendingRequest=request;$('autoRequest').hidden=false;$('autoHost').textContent=request.name;
       $('autoStatus').textContent='A Windows receiver wants to use this camera. Only accept your own PC.';
     },
@@ -143,7 +146,7 @@ async function loadDiscovery(){
   $('autoPanel').hidden=false;
   discoveryEndpoint=DEFAULT_DISCOVERY;
   try{
-    const response=await fetch('./config.json?v=20261029-4',{cache:'no-store'});
+    const response=await fetch('./config.json?v=6',{cache:'no-store'});
     if(!response.ok)throw new Error('Discovery configuration could not be loaded.');
     const config=await response.json();
     if(typeof config.discoveryEndpoint!=='string'||!/^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev$/.test(config.discoveryEndpoint))throw new Error('Invalid discovery configuration.');
@@ -188,5 +191,7 @@ $('resolution').addEventListener('change',()=>{remember('resolution',$('resoluti
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(!stopped)keepAwake();}else if(peer)error(new Error(receiver?'Keep this receiver window visible to maintain frame rate.':'Keep Safari visible and your screen on while streaming.'));});
 addEventListener('pagehide',()=>{discovery?.close();if(receiver && bridgeId)fetch('/disconnect',{method:'POST',headers:{Authorization:'Bearer '+token,'X-Session':receiverSession},body:JSON.stringify({id:bridgeId}),keepalive:true}).catch(()=>{});closePeer();if(stream)stream.getTracks().forEach(t=>t.stop());releaseWake();});
 if(receiver){$('sender').hidden=true;$('receiver').hidden=false;$('heading').textContent='Your iPhone. In your scene.';$('subtitle').textContent='Pair once for this session. LensioStudio handles composition, filters and virtual camera output.';if(!token)error(new Error('Open this receiver from LensioStudio.'));}
-else {const offer=params.get('offer');if(offer){$('offer').value=offer;history.replaceState(null,'',location.pathname+location.search);}}
+else {const offer=params.get('offer');if(offer)$('offer').value=offer;if(offer||scannedRoom)history.replaceState(null,'',location.pathname+location.search);
+  if(pairRoom){$('start').textContent='Start camera & connect';$('subtitle').textContent='Your camera connects automatically to the PC whose QR you scanned. Keep this page open and your phone screen on.';$('pairing').hidden=true;}
+}
 loadDiscovery();

@@ -38,6 +38,8 @@ class StudioLayoutSmoke {
             Check(!((Control)Field(form,"btnConnectPhone")).Visible, "Manual connect must be hidden");
             Check(typeof(MainForm).GetField("cbBlur",BindingFlags.Instance|BindingFlags.NonPublic)==null,"Blur UI still exists");
             Check(typeof(MainForm).GetField("btnUpdatePhone",BindingFlags.Instance|BindingFlags.NonPublic)==null,"Duplicate updater still exists");
+            Check(typeof(MainForm).GetField("addPhone",BindingFlags.Instance|BindingFlags.NonPublic)==null,"Add phone button remains");
+            Check(Field(form,"pairingQrPanel")!=null,"Native pairing QR is missing");
             var tray=(ContextMenuStrip)Field(form,"trayMenu");
             Check(tray.Renderer is ToolStripProfessionalRenderer,"Tray renderer missing");
             bool open=false,exit=false,update=false;
@@ -49,6 +51,7 @@ class StudioLayoutSmoke {
             Check(open && exit && update,"English tray actions missing");
             CaptureMenu(tray,"tray");
             var status=(StatusStrip)Field(form,"studioStatus");
+            foreach(ToolStripItem item in ((ToolStripDropDownItem)status.Items[0]).DropDownItems)Check(!item.Text.Contains("Add phone"),"Add phone menu remains");
             CaptureMenu(((ToolStripDropDownItem)status.Items[0]).DropDown,"panels");
             CaptureMenu(((ToolStripDropDownItem)status.Items[1]).DropDown,"image");
             var sources=(Panel)Field(form,"dockSources");

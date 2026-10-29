@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("2.9.0.2")]
-[assembly: System.Reflection.AssemblyFileVersion("2.9.0.2")]
+[assembly: System.Reflection.AssemblyVersion("2.9.0.3")]
+[assembly: System.Reflection.AssemblyFileVersion("2.9.0.3")]
 [assembly: System.Reflection.AssemblyTitle("LensioStudio")]
 [assembly: System.Reflection.AssemblyProduct("LensioStudio")]
 [assembly: System.Reflection.AssemblyDescription("LensioStudio virtual camera and audio studio")]
@@ -26,6 +26,7 @@ namespace ApexCam
         [STAThread]
         static void Main()
         {
+            try { WebReceiverRuntime.Initialize(); } catch { /* Native Android reception remains available if the optional web engine cannot start. */ }
             bool isFirstInstance;
             using (Mutex mutex = new Mutex(true, "Local\\ApexPhoneSharePC_App_Singleton_Mutex_v2", out isFirstInstance))
             {

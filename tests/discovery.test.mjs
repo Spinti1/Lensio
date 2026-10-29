@@ -18,6 +18,13 @@ send(phone,{kind:'cancel'});assert.equal(host.deserializeAttachment().target,nul
 send(host,{kind:'request',target:'missing',offer:description('offer')});assert.equal(host.messages.at(-1).kind,'error');
 send(host,{kind:'request',target:'iphone',offer:{type:'offer',sdp:'v=0'+'x'.repeat(49000)}});assert.equal(host.messages.at(-1).kind,'error');
 send(host,{kind:'request',target:'iphone',offer:description('offer')});room.webSocketClose(phone);assert.equal(host.deserializeAttachment().target,null);
+const a=add('phone-a','phone'),b=add('phone-b','phone');
+send(host,{kind:'request',target:'phone-a',offer:description('offer')});send(host,{kind:'request',target:'phone-b',offer:description('offer')});
+assert.deepEqual(host.deserializeAttachment().targets.sort(),['phone-a','phone-b']);
+send(a,{kind:'answer',answer:description('answer')});assert.equal(host.messages.at(-1).id,'phone-a');
+send(b,{kind:'answer',answer:description('answer')});assert.equal(host.messages.at(-1).id,'phone-b');
+send(host,{kind:'cancel',target:'phone-a'});assert.equal(a.deserializeAttachment().target,null);assert.equal(b.deserializeAttachment().target,'pc');
+room.webSocketClose(host);assert.equal(b.deserializeAttachment().target,null);
 const abusive=add('spam','host');for(let i=0;i<30;i++)send(abusive,{kind:'ping'});assert.equal(abusive.messages.at(-1).kind,'error');
 assert.equal((await worker.fetch(new Request('https://example.com/signal',{headers:{Upgrade:'websocket',Origin:'https://evil.example'}}),{})).status,403);
 assert.equal((await worker.fetch(new Request('https://example.com/signal',{headers:{Upgrade:'websocket',Origin:'https://spinti1.github.io'}}),{})).status,503);
@@ -26,4 +33,11 @@ assert.notEqual(await networkKey('192.0.2.1','secret1'),await networkKey('192.0.
 assert.notEqual(await networkKey('192.0.2.1','secret1'),await networkKey('192.0.2.2','secret1'));
 assert.equal(networkGroup('2001:db8:abcd:1234::1'),networkGroup('2001:0db8:abcd:1234:1234:5678:9abc:def0'));
 assert.notEqual(networkGroup('2001:db8:abcd:1234::1'),networkGroup('2001:db8:abcd:1235::1'));
+const env={DISCOVERY_SALT:'test-salt',NETWORKS:{idFromName:n=>n,get:id=>({fetch:async()=>Response.json({id})})}};
+async function roomFor(ip,key){return (await (await worker.fetch(new Request('https://example.com/signal?room='+key,{headers:{Upgrade:'websocket',Origin:'https://spinti1.github.io','CF-Connecting-IP':ip}}),env)).json()).id;}
+assert.equal(await roomFor('192.0.2.1','a'.repeat(64)),await roomFor('2001:db8::1','a'.repeat(64)));
+assert.notEqual(await roomFor('192.0.2.1','a'.repeat(64)),await roomFor('192.0.2.1','b'.repeat(64)));
+assert.equal((await worker.fetch(new Request('https://example.com/signal?room=guessable',{headers:{Upgrade:'websocket',Origin:'https://spinti1.github.io','CF-Connecting-IP':'192.0.2.1'}}),env)).status,400);
+assert.equal((await worker.fetch(new Request('https://example.com/signal?room='+('a'.repeat(64))+'&host='+('b'.repeat(64)),{headers:{Upgrade:'websocket',Origin:'https://spinti1.github.io','CF-Connecting-IP':'192.0.2.1'}}),env)).status,403);
+const impostor=socket();impostor.serializeAttachment({id:'phone-cannot-host',role:null,hostAllowed:false,rateAt:Date.now(),rate:0});sockets.push(impostor);send(impostor,{kind:'hello',role:'host',name:'Fake receiver'});assert.equal(impostor.messages.at(-1).kind,'error');
 console.log('PASS: discovery, scoped offer/answer, busy target rejection, cancel/close cleanup, message/SDP bounds, origin rejection and keyed network grouping');

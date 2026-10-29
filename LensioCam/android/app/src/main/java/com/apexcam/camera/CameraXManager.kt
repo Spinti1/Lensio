@@ -76,19 +76,30 @@ class CameraXManager(
             catch (_: Exception) { cameraSelectionError = "The camera rejected the stabilization mode" }
         }, ContextCompat.getMainExecutor(context))
     }
-    private var released = false
+    @Volatile private var released = false
     val usesSharedPreview = android.os.Build.DEVICE.equals("a21s", true)
-    private var softwarePreview: android.widget.ImageView? = null
+    @Volatile private var softwarePreview: android.widget.ImageView? = null
+    val hasVisiblePreview: Boolean get() = softwarePreview != null && !released
     private val previewPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val previewExecutor = Executors.newSingleThreadExecutor { Thread(it, "Lensio-preview") }
 
     fun showEncodedPreview(jpeg: ByteArray) {
-        if (!usesSharedPreview || released || softwarePreview == null || !previewPending.compareAndSet(false, true)) return
+        val target = softwarePreview ?: return
+        if (!usesSharedPreview || released || !previewPending.compareAndSet(false, true)) return
         try {
-            val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
-            val bitmap = android.graphics.BitmapFactory.decodeByteArray(jpeg,0,jpeg.size,options)
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                try { if (!released) softwarePreview?.setImageBitmap(bitmap) }
-                finally { previewPending.set(false) }
+            // Decode independently of the encoder/socket worker. One pending frame avoids lag.
+            previewExecutor.execute {
+                try {
+                    if (released || softwarePreview !== target) { previewPending.set(false); return@execute }
+                    val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(jpeg,0,jpeg.size,options)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            if (!released && softwarePreview === target) target.setImageBitmap(bitmap)
+                            else bitmap?.recycle()
+                        } finally { previewPending.set(false) }
+                    }
+                } catch (_: Exception) { previewPending.set(false) }
             }
         } catch (_: Exception) { previewPending.set(false) }
     }
@@ -576,6 +587,7 @@ class CameraXManager(
         imageAnalysis?.clearAnalyzer()
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
+        previewExecutor.shutdownNow()
         onFrameAvailable = null
         onLensChanged = null
         currentPreviewView = null

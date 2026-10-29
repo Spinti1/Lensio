@@ -41,7 +41,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     var onConnectionChanged: ((Boolean) -> Unit)? = null
     var onConnectedHost: ((String) -> Unit)? = null
     var onPreviewJpeg: ((ByteArray) -> Unit)? = null
-    @Volatile private var lastPreviewAt = 0L
+    var isPreviewVisible: (() -> Boolean)? = null
     var httpStreamServer: HttpStreamServer? = null
     @Volatile var totalFramesSent = 0L
         private set
@@ -143,8 +143,9 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
 
     fun sendFrame(imageProxy: ImageProxy, batteryLevel: Int, tempC: Float, isCharging: Boolean = false) {
         val owner = session
+        val previewVisible = onPreviewJpeg != null && (isPreviewVisible?.invoke() != false)
         if (closed.get() || (owner == null && (httpStreamServer?.activeClientCount ?: 0) == 0 &&
-                (onPreviewJpeg == null || clock() - lastPreviewAt < 200)) ||
+                !previewVisible) ||
             !busy.compareAndSet(false, true)) {
             imageProxy.close()
             return
@@ -174,8 +175,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                     buffer.reset()
                     if (!YuvImage(yuvBytes, ImageFormat.NV21, width, height, null)
                         .compressToJpeg(Rect(0,0,width,height), 85, buffer)) return@execute
-                    if (onPreviewJpeg != null && clock() - lastPreviewAt >= 200) {
-                        lastPreviewAt = clock()
+                    if (previewVisible) {
                         onPreviewJpeg?.invoke(buffer.toByteArray())
                     }
                     if ((httpStreamServer?.activeClientCount ?: 0) > 0)
@@ -252,6 +252,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
             onConnectedHost = null
             httpStreamServer = null
             onPreviewJpeg = null
+            isPreviewVisible = null
             connectExecutor.shutdownNow()
             receiveExecutor.shutdownNow()
             streamExecutor.shutdown()

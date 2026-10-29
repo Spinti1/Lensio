@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Reflection;
@@ -112,6 +112,29 @@ class StudioLayoutSmoke {
                 }
                 Console.WriteLine("PASS layout "+size.Width+"x"+size.Height);
             }
+            // A QR must fully repaint when phone rows make its canvas smaller.
+            var qrImage=new Bitmap(212,212);
+            using(var g=Graphics.FromImage(qrImage)){g.Clear(Color.White);g.FillRectangle(Brushes.Black,16,16,180,180);}
+            typeof(MainForm).GetField("pairingQrImage",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(form,qrImage);
+            var qrCanvas=(Panel)Field(form,"qrCanvas");
+            Check((bool)typeof(Control).GetMethod("GetStyle",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(qrCanvas,new object[]{ControlStyles.ResizeRedraw}),"QR does not repaint on resize");
+            var drawQr=typeof(MainForm).GetMethod("DrawPairingQr",BindingFlags.Instance|BindingFlags.NonPublic);
+            using(var target=new Bitmap(320,320))using(var graphics=Graphics.FromImage(target)){
+                drawQr.Invoke(form,new object[]{graphics,new Rectangle(0,0,320,320)});
+                drawQr.Invoke(form,new object[]{graphics,new Rectangle(0,0,152,152)});
+                Check(target.GetPixel(180,100).ToArgb()==qrCanvas.BackColor.ToArgb(),"Old QR pixels remain after shrinking");
+                Check(target.GetPixel(23,23).ToArgb()==Color.White.ToArgb(),"QR quiet zone missing");
+                Check(target.GetPixel(30,70).ToArgb()==Color.White.ToArgb() && target.GetPixel(31,70).ToArgb()==Color.Black.ToArgb(),"QR modules were scaled to fractional pixels");
+            }
+            var cards=(Panel)Field(form,"phoneCards");
+            for(int phoneCount=0;phoneCount<=4;phoneCount++){
+                if(phoneCount>0){var row=new Panel();row.Controls.Add(new Button());cards.Controls.Add(row);}
+                typeof(MainForm).GetMethod("LayoutPhoneCards",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,new object[]{250});
+                Application.DoEvents();
+                var qrPanel=(Panel)Field(form,"pairingQrPanel");
+                if(qrPanel.Parent==Field(form,"ctrlContent"))Check(qrCanvas.ClientSize.Height>=106,"Inline QR clipped with "+phoneCount+" phones");
+            }
+            Console.WriteLine("PASS QR full redraw, integer modules, quiet zone and layout for zero to four phones");
             form.Size = new Size(640,480);
             for(int i=0;i<30;i++) scene.AddLayer(new ObsLayer {Name="Layer "+i,Type=SourceType.Text,TextContent="Sample"});
             typeof(MainForm).GetField("selectedLayer",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(form,null);

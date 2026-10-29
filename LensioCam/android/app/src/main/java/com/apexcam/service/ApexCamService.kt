@@ -390,7 +390,10 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         if (pipelineStarted || isDestroyed) return
         pipelineStarted = true
         // 2. Connect CameraX frame pipeline to native high-speed sender (zero WebRTC overhead)
-        if (cameraManager.usesSharedPreview) nativeSender.onPreviewJpeg = { cameraManager.showEncodedPreview(it) }
+        if (cameraManager.usesSharedPreview) {
+            nativeSender.onPreviewJpeg = { cameraManager.showEncodedPreview(it) }
+            nativeSender.isPreviewVisible = { cameraManager.hasVisiblePreview }
+        }
         cameraManager.onFrameAvailable = { imageProxy ->
             nativeSender.sendFrame(imageProxy, cachedBatteryLevel, cachedDeviceTemp, cachedIsCharging)
         }

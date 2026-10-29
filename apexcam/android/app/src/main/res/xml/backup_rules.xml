@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Identity belongs to this phone and must not be cloned onto another phone. -->
+    <exclude domain="sharedpref" path="lensio_device.xml" />
+</full-backup-content>

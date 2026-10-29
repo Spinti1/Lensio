@@ -1,0 +1,86 @@
+# Node & Web dependencies
+node_modules/
+*/node_modules/
+package-lock.json
+dist/
+*/dist/
+
+# Gradle & Android builds
+.gradle/
+*/.gradle/
+.idea/
+*/.idea/
+build/
+*/build/
+local.properties
+*.apk
+*.ap_
+*.aab
+captures/
+.externalNativeBuild/
+.cxx/
+
+# .NET & Visual Studio / Windows binaries
+bin/
+obj/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.exe
+*.dll
+*.pdb
+*.zip
+*.tar
+*.log
+*.bin
+out.txt
+test_frame.bin
+scan_ports.ps1
+
+# Release bundles and 3rd party drivers
+ApexCam_Release/
+ApexPhoneShare_Release/
+vbcable_driver/
+*/vbcable_driver/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary & Superpowers / AI Agent artifacts
+.superpowers/
+
+# Unrelated projects in workspace
+HFF_*
+HumanFallFlat_Roblox/
+csgo-music-kit-app/
+ig-tools/
+juice-lyrics-extension*/
+DecompilerLib/
+inssist.crx
+server.js
+shared-memory-queue.c
+
+# Other plan/spec files
+docs/superpowers/plans/*csgo*
+docs/superpowers/plans/*spotifast*
+docs/superpowers/specs/*csgo*
+docs/superpowers/specs/*spotifast*
+/.gradle-user-home/
+.kotlin/
+# Private/local state and release staging
+.publish/
+.public-release/
+test-data/
+*.keystore
+*.jks
+*.p12
+*.pem
+.env
+.env.*
+workspace.json
+phone-names.txt
+*.tmp

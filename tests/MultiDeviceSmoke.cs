@@ -46,7 +46,14 @@ class MultiDeviceSmoke {
             using(var a=Phone(receiver,"a"))
             using(var b=Phone(receiver,"b")) {
                 var red=Packet(Color.Red);var green=Packet(Color.Lime);
-                for(int i=0;i<8;i++){a.GetStream().Write(red,0,red.Length);b.GetStream().Write(green,0,green.Length);Thread.Sleep(20);}
+                // Latest-frame receivers intentionally discard old packets. Keep sending while
+                // a slow CI host schedules its handshake/decode threads, rather than requiring
+                // three frames from a finite burst before the decoder has even started.
+                var deadline=DateTime.UtcNow.AddSeconds(12);
+                while(DateTime.UtcNow<deadline) {
+                    a.GetStream().Write(red,0,red.Length);b.GetStream().Write(green,0,green.Length);Thread.Sleep(40);
+                    lock(gate)if(counts.ContainsKey("a") && counts.ContainsKey("b") && counts["a"]>2 && counts["b"]>2)break;
+                }
                 Await(()=>{lock(gate)return counts.ContainsKey("a") && counts.ContainsKey("b") && counts["a"]>2 && counts["b"]>2;});
                 receiver.SendControl("b","{\"zoom\":2}");
                 Check(new StreamReader(b.GetStream(),Encoding.UTF8,false,1024,true).ReadLine()=="{\"zoom\":2}","Targeted control failed");

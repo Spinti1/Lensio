@@ -1,5 +1,5 @@
 import {encodeCode,decodeCode,gatherIce} from './protocol.js';
-import {AutoConnect} from './auto-connect.js?v=20261029-4';
+import {AutoConnect} from './auto-connect.js?v=20261029-5';
 const $=id=>document.getElementById(id);
 const local=$('localVideo'),remote=$('remoteVideo');
 const receiver=location.pathname==='/receiver' && location.hostname==='127.0.0.1';
@@ -123,6 +123,7 @@ function startDiscovery(){
   $('autoPanel').hidden=false;
   discovery=new AutoConnect({endpoint:discoveryEndpoint,role:receiver?'host':'phone',name:receiver?'LensioStudio on Windows':$('phoneName').value,
     onStatus:text=>$('autoStatus').textContent=text,
+    onDiagnostic:text=>$('autoDiagnostic').textContent=text,
     onDevices:devices=>{
       if(!receiver)return;$('autoDevices').replaceChildren();
       $('autoStatus').textContent=devices.length?'Select your phone. Accept the request on its screen.':'Waiting for a phone. Open LensioCam Web in Safari and press Start camera.';

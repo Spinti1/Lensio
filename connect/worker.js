@@ -23,7 +23,7 @@ export default {
     if(!ip||!env.DISCOVERY_SALT)return new Response('Service unavailable',{status:503});
     const digest=await networkKey(networkGroup(ip),env.DISCOVERY_SALT);
     // No IP, device name or SDP is written to storage or application logs.
-    return env.NETWORKS.get(env.NETWORKS.idFromName(digest)).fetch(new Request('https://internal/signal',{headers:{Upgrade:'websocket'}}));
+    return env.NETWORKS.get(env.NETWORKS.idFromName(digest)).fetch(new Request('https://internal/signal',{headers:{Upgrade:'websocket','X-Network-Hint':digest.slice(0,8),'X-Address-Family':ip.includes(':')?'IPv6':'IPv4'}}));
   }
 };
 export class NetworkRoom {
@@ -33,12 +33,12 @@ export class NetworkRoom {
   send(ws,value){try{ws.send(JSON.stringify(value));}catch{}}
   find(id){return this.sockets().find(ws=>this.info(ws)?.id===id);}
   save(ws,data){ws.serializeAttachment(data);}
-  async fetch(){
+  async fetch(request){
     if(this.sockets().length>=32)return new Response('Network device limit reached',{status:429});
     const pair=new WebSocketPair(),client=pair[0],server=pair[1];
     this.ctx.acceptWebSocket(server);
     this.save(server,{id:crypto.randomUUID(),role:null,name:'',target:null,last:Date.now(),rateAt:Date.now(),rate:0});
-    this.send(server,{kind:'welcome',id:this.info(server).id});
+    this.send(server,{kind:'welcome',id:this.info(server).id,network:request.headers.get('X-Network-Hint'),family:request.headers.get('X-Address-Family')});
     await this.ctx.storage.setAlarm(Date.now()+60000);
     return new Response(null,{status:101,webSocket:client});
   }

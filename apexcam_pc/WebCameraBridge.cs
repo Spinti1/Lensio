@@ -18,7 +18,7 @@ namespace ApexCam
     public sealed class WebCameraBridge : IDisposable
     {
         private sealed class Device : IDisposable {
-            public string Id; public TcpClient Client; public Dictionary<string,object> Catalog;
+            public string Id,Session; public TcpClient Client; public Dictionary<string,object> Catalog;
             public readonly Queue<object> Commands=new Queue<object>();
             public readonly object Gate=new object(); public DateTime LastFrame=DateTime.UtcNow;
             public void Dispose(){try{Client.Close();}catch{}}
@@ -77,11 +77,12 @@ namespace ApexCam
                 string auth,origin;
                 if(method!="POST" || !h.TryGetValue("Authorization",out auth) || auth!="Bearer "+token || (h.TryGetValue("Origin",out origin) && origin!="http://127.0.0.1:"+port)) {Reply(s,401,"text/plain",new byte[0]);return;}
                 if(h.ContainsKey("Transfer-Encoding"))throw new InvalidDataException();
+                string session;if(!h.TryGetValue("X-Session",out session)||session.Length<8||session.Length>64)throw new InvalidDataException();
                 int length=HeaderInt(h,"Content-Length",1,path=="/frame"?10*1024*1024:32768);
                 byte[] body=Exact(s,length);
                 if(path=="/frame"){
                     string id;if(!h.TryGetValue("X-Device",out id))throw new InvalidDataException();
-                    var d=Find(id);int width=HeaderInt(h,"X-Width",1,4096),height=HeaderInt(h,"X-Height",1,4096),fps=HeaderInt(h,"X-Fps",1,60);
+                    var d=Find(id,session);int width=HeaderInt(h,"X-Width",1,4096),height=HeaderInt(h,"X-Height",1,4096),fps=HeaderInt(h,"X-Fps",1,60);
                     if(body.Length<4||body[0]!=255||body[1]!=216||body[body.Length-2]!=255||body[body.Length-1]!=217)throw new InvalidDataException();
                     lock(d.Gate){
                         // A stale browser tab must not silently reconnect after its native decoder expired.
@@ -93,11 +94,11 @@ namespace ApexCam
                 }
                 var values=Json().Deserialize<Dictionary<string,object>>(Encoding.UTF8.GetString(body));
                 string deviceId=Text(values,"id");if(deviceId.Length<5||deviceId.Length>100||!deviceId.StartsWith("web:"))throw new InvalidDataException();
-                if(path=="/register")Register(deviceId,values);
-                else if(path=="/catalog"){var d=Find(deviceId);lock(gate)d.Catalog=ValidateCatalog(values);}
-                else if(path=="/disconnect")Remove(deviceId,null);
+                if(path=="/register")Register(deviceId,values,session);
+                else if(path=="/catalog"){var d=Find(deviceId,session);lock(gate)d.Catalog=ValidateCatalog(values);}
+                else if(path=="/disconnect")Remove(deviceId,Find(deviceId,session));
                 else if(path=="/commands"){
-                    var d=Find(deviceId);object[] commands;lock(d.Commands){commands=d.Commands.ToArray();d.Commands.Clear();}
+                    var d=Find(deviceId,session);object[] commands;lock(d.Commands){commands=d.Commands.ToArray();d.Commands.Clear();}
                     Reply(s,200,"application/json",Encoding.UTF8.GetBytes(Json().Serialize(new{commands=commands})));return;
                 }else throw new InvalidDataException();
                 Reply(s,204,"text/plain",new byte[0]);
@@ -107,11 +108,11 @@ namespace ApexCam
         private static Dictionary<string,object> ValidateCatalog(Dictionary<string,object> value){
             object cameras;if(!value.TryGetValue("cameras",out cameras)||!(cameras is System.Collections.IList)||((System.Collections.IList)cameras).Count>32)throw new InvalidDataException();return value;
         }
-        private Device Find(string id){lock(gate){Device d;if(!devices.TryGetValue(id,out d))throw new InvalidDataException();return d;}}
-        private void Register(string id,Dictionary<string,object> catalog){
+        private Device Find(string id,string session){lock(gate){Device d;if(!devices.TryGetValue(id,out d)||d.Session!=session)throw new InvalidDataException();return d;}}
+        private void Register(string id,Dictionary<string,object> catalog,string session){
             ValidateCatalog(catalog);Remove(id,null);
             var client=new TcpClient();SetHandleInformation(client.Client.Handle,1,0);client.NoDelay=true;client.SendTimeout=3000;client.Connect(IPAddress.Loopback,videoPort);
-            var d=new Device{Id=id,Client=client,Catalog=catalog};
+            var d=new Device{Id=id,Session=session,Client=client,Catalog=catalog};
             try{
                 lock(gate){if(!running||devices.Count>=4)throw new InvalidOperationException();devices.Add(id,d);}
                 var hello=Encoding.UTF8.GetBytes(Json().Serialize(new{id=id,name=Text(catalog,"name")}));

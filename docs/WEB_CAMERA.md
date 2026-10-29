@@ -31,7 +31,7 @@ Video travels directly between the two browsers, then over loopback to LensioStu
 
 There are no analytics, third-party scripts, or camera uploads. The client saves only a random device ID, device name, selected camera ID, and resolution in its own browser local storage. LensioStudio saves the web camera's placement and settings with the other sources. Camera frames are not persisted by this feature. Closing the phone page releases its camera tracks. Closing LensioStudio disposes its bridge, accepted sockets and local decoder connections; the receiver notices the lost connection and closes its peer. The iPhone may keep its local camera preview until **Stop camera** or the page is closed.
 
-The HTTP bridge listens on an ephemeral loopback port, requires a fresh cryptographically random session token, validates Host and Origin, limits request/header sizes and simultaneous requests, and rejects unauthenticated writes. Catalogs and control queues are bounded. Its socket handles are non-inheritable, and idle devices are expired. It serves embedded assets from the EXE; there are no extracted or versioned copies of web files on users' PCs.
+The HTTP bridge listens on an ephemeral loopback port, requires a fresh cryptographically random session token, validates Host and Origin, limits request/header sizes and simultaneous requests, and rejects unauthenticated writes. Each receiver window has a separate session identifier: stale windows cannot send frames, read commands or disconnect a replacement session. Catalogs and control queues are bounded. Its socket handles are non-inheritable, and idle devices are expired. It serves embedded assets from the EXE; there are no extracted or versioned copies of web files on users' PCs.
 
 ## Validation
 

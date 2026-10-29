@@ -464,6 +464,12 @@ namespace ApexCam
                 g.DrawPath(borderPen, path);
             }
 
+            if(mainDeviceId!=null && mainDeviceId.StartsWith("web:")) {
+                TextRenderer.DrawText(g,"Web camera | "+phoneFps+" FPS | Battery / temperature unavailable",
+                    Font,new Rectangle(12,6,Math.Max(0,panelTelemetry.Width-24),panelTelemetry.Height-12),
+                    ColorTextPrimary,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+                return;
+            }
             int curBattery = Math.Max(0, Math.Min(100, batteryPercent));
             Color batteryColor = isPhoneCharging ? Color.FromArgb(250, 204, 21) : // Bright Yellow when charging
                                  (curBattery >= 60) ? ColorAccentEmerald :

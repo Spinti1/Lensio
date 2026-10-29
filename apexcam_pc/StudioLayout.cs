@@ -380,6 +380,9 @@ namespace ApexCam
         private void RefreshStudioStatus()
         {
             if (streamStatus == null) return;
+            if(isConnected && mainDeviceId!=null && mainDeviceId.StartsWith("web:")) {
+                streamStatus.Text=string.Format("{0} FPS  |  {1}x{2}  |  Web camera",phoneFps,currentResWidth,currentResHeight);return;
+            }
             streamStatus.Text = isConnected
                 ? string.Format("{0} FPS  |  {1}x{2}  |  Battery {3}%  |  {4:0.0} C",
                     phoneFps,currentResWidth,currentResHeight,batteryPercent,deviceTemp)

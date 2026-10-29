@@ -4,8 +4,9 @@ const local=$('localVideo'),remote=$('remoteVideo');
 const receiver=location.pathname==='/receiver' && location.hostname==='127.0.0.1';
 const params=new URLSearchParams(location.hash.slice(1)),token=params.get('token');
 const PUBLIC_URL='https://spinti1.github.io/Lensio/';
+const receiverSession=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
 let peer,channel,stream,wake,stopped=true,bridgeId,postBusy=false,frameHandle,pollTimer;
-let generation=0,changing=false,deviceId='',catalog,frames=0,statsAt=performance.now();
+let generation=0,changing=false,deviceId='',catalog,frames=0,reportedFps=30,statsAt=performance.now();
 const state=text=>$('state').textContent=text;
 function error(e){$('message').textContent=e?.message||String(e);}
 function remember(key,value){try{localStorage.setItem('lensio.'+key,value);}catch{}}
@@ -16,7 +17,7 @@ $('phoneName').value=recalled('name',/iPhone|iPad/.test(navigator.userAgent)?'iP
 $('resolution').value=recalled('resolution','720');
 $('phoneName').addEventListener('change',()=>{remember('name',$('phoneName').value);sendCatalog().catch(error);});
 async function bridge(path,data,headers={}) {
-  const response=await fetch(path,{method:'POST',headers:{Authorization:'Bearer '+token,...headers},body:data,cache:'no-store',signal:typeof AbortSignal!=='undefined' && AbortSignal.timeout?AbortSignal.timeout(8000):undefined});
+  const response=await fetch(path,{method:'POST',headers:{Authorization:'Bearer '+token,'X-Session':receiverSession,...headers},body:data,cache:'no-store',signal:typeof AbortSignal!=='undefined' && AbortSignal.timeout?AbortSignal.timeout(8000):undefined});
   if(!response.ok)throw new Error(response.status===401?'Receiver expired. Reopen iPhone / Web from LensioStudio.':'LensioStudio receiver: HTTP '+response.status);
   return response.status===204?null:response.json();
 }
@@ -129,8 +130,8 @@ function pumpFrames(){
     const id=bridgeId,width=canvas.width,height=canvas.height;
     canvas.toBlob(async blob=>{
       try{if(!blob || run!==generation)return;
-        await bridge('/frame',blob,{'X-Device':id,'X-Width':String(width),'X-Height':String(height),'X-Fps':'30','Content-Type':'image/jpeg'});
-        frames++;const elapsed=performance.now()-statsAt;if(elapsed>1000){$('receiverStats').textContent=`${width} × ${height} · ${Math.round(frames*1000/elapsed)} fps`;frames=0;statsAt=performance.now();}
+        await bridge('/frame',blob,{'X-Device':id,'X-Width':String(width),'X-Height':String(height),'X-Fps':String(reportedFps),'Content-Type':'image/jpeg'});
+        frames++;const elapsed=performance.now()-statsAt;if(elapsed>1000){reportedFps=Math.max(1,Math.min(60,Math.round(frames*1000/elapsed)));$('receiverStats').textContent=`${width} × ${height} · ${reportedFps} fps`;frames=0;statsAt=performance.now();}
       }catch(e){error(e);closePeer();}finally{postBusy=false;}
     },'image/jpeg',0.94);
   }
@@ -144,6 +145,6 @@ action('copyInvite',()=>copy('invite'));action('copyAnswer',()=>copy('answer'));
 $('cameras').addEventListener('change',()=>startCamera($('cameras').value).catch(()=>{}));
 $('resolution').addEventListener('change',()=>{remember('resolution',$('resolution').value);if(stream)startCamera().catch(()=>{});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(!stopped)keepAwake();}else if(peer)error(new Error(receiver?'Keep this receiver window visible to maintain frame rate.':'Keep Safari visible and your screen on while streaming.'));});
-addEventListener('pagehide',()=>{if(receiver && bridgeId)fetch('/disconnect',{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({id:bridgeId}),keepalive:true}).catch(()=>{});closePeer();if(stream)stream.getTracks().forEach(t=>t.stop());releaseWake();});
+addEventListener('pagehide',()=>{if(receiver && bridgeId)fetch('/disconnect',{method:'POST',headers:{Authorization:'Bearer '+token,'X-Session':receiverSession},body:JSON.stringify({id:bridgeId}),keepalive:true}).catch(()=>{});closePeer();if(stream)stream.getTracks().forEach(t=>t.stop());releaseWake();});
 if(receiver){$('sender').hidden=true;$('receiver').hidden=false;$('heading').textContent='Your iPhone. In your scene.';$('subtitle').textContent='Pair once for this session. LensioStudio handles composition, filters and virtual camera output.';if(!token)error(new Error('Open this receiver from LensioStudio.'));}
 else {const offer=params.get('offer');if(offer){$('offer').value=offer;history.replaceState(null,'',location.pathname+location.search);}}

@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("2.8.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("2.8.0.0")]
+[assembly: System.Reflection.AssemblyVersion("2.9.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("2.9.0.0")]
 [assembly: System.Reflection.AssemblyTitle("LensioStudio")]
 [assembly: System.Reflection.AssemblyProduct("LensioStudio")]
 [assembly: System.Reflection.AssemblyDescription("LensioStudio virtual camera and audio studio")]

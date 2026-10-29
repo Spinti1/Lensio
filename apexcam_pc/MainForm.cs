@@ -1806,6 +1806,8 @@ namespace ApexCam
                 receiver.OnDeviceFrameReceived += ProcessDeviceFrame;
 
                 receiver.Start();
+                try { webCameraBridge=new WebCameraBridge(receiver.BoundPort);webCameraBridge.Start(); }
+                catch { if(webCameraBridge!=null)webCameraBridge.Dispose();webCameraBridge=null; }
                 try { AdbTunnel.SetupPortForwarding(); } catch { }
             }
             catch (Exception ex)
@@ -2196,6 +2198,7 @@ namespace ApexCam
         // ==========================================
         private void TogglePcAudio()
         {
+            if(!isPcAudioStreaming && mainDeviceId!=null && mainDeviceId.StartsWith("web:"))return;
             restorePcAudioPending=false;
             isPcAudioStreaming = !isPcAudioStreaming;
             if (isPcAudioStreaming)
@@ -2251,6 +2254,7 @@ namespace ApexCam
 
         private void ToggleMic()
         {
+            if(!isMicStreaming && mainDeviceId!=null && mainDeviceId.StartsWith("web:"))return;
             restoreMicPending=false;
             isMicStreaming = !isMicStreaming;
             if (isMicStreaming)
@@ -2494,6 +2498,7 @@ namespace ApexCam
             Cleanup(() => { if (updateServer != null) updateServer.Dispose(); });
             Cleanup(() => { if (mjpegReceiver != null) mjpegReceiver.Dispose(); });
             Cleanup(() => { if (beacon != null) beacon.Dispose(); });
+            Cleanup(() => { if (webCameraBridge != null) webCameraBridge.Dispose(); });
             Cleanup(() => { if (receiver != null) receiver.Dispose(); });
             Cleanup(() => { if (vcamBridge != null) vcamBridge.Dispose(); });
             Cleanup(() => AdbTunnel.RemovePortForwarding());

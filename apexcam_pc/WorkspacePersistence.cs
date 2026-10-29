@@ -166,6 +166,7 @@ namespace ApexCam {
             if(values.Count>0 && receiver!=null)receiver.SendControl(id,workspaceJson.Serialize(values));
             if(!restoreTorch)return;
             restoreTorchPending.Add(id);
+            if(id.StartsWith("web:"))return; // The next browser catalog carries torch capabilities.
             PhoneSlot slot;lock(devicesGate)if(!phoneSlots.TryGetValue(id,out slot))return;
             string host=slot.Info.Host;if(string.IsNullOrEmpty(host))return;
             System.Threading.ThreadPool.QueueUserWorkItem(_ => {
@@ -192,6 +193,7 @@ namespace ApexCam {
                 receiver.SendControl(id,"{\"toggleTorch\":true}");
         }
         private void RestoreAudioPreferences(string id) {
+            if(id!=null && id.StartsWith("web:"))return;
             if(id!=mainDeviceId)return;
             if(restorePcAudioPending && !isPcAudioStreaming)TogglePcAudio();
             if(restoreMicPending && !isMicStreaming)ToggleMic();

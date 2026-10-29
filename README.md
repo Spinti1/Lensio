@@ -10,6 +10,12 @@ LensioCam turns Android phones into wireless webcams. LensioStudio brings them t
 - Keep streaming with the phone screen off; stop explicitly from the app or notification.
 - Get updates from GitHub Releases with SHA-256 integrity checks.
 
+## iPhone / Web preview
+
+**[Open LensioCam Web](https://spinti1.github.io/Lensio/)** in Safari. No native iOS installation, Apple Developer subscription, or IPA renewal is needed.
+
+Use the [Windows web-preview build](https://github.com/Spinti1/Lensio/releases/tag/v2.9.0-web.1), then select **Panels → Add phone → iPhone / Web (preview)**. The receiver walks you through exchanging pairing codes. Keep both devices on the same Wi-Fi, Safari visible with the iPhone screen on, and the PC receiver window open and visible. This first preview supports video; microphone and PC audio remain Android features. Real Safari/device performance still needs validation. Read the [setup, limitations and privacy notes](docs/WEB_CAMERA.md).
+
 ## Get started
 
 1. Download **LensioStudio.exe** and **LensioCam.apk** from [Releases](https://github.com/Spinti1/Lensio/releases/latest). Keep both files together on your PC.
@@ -41,6 +47,6 @@ The public CI builds and tests both platforms; its APK is only a build artifact,
 
 ## Development
 
-The maintained clients are `apexcam_pc/` (C# / WinForms) and `apexcam/android/` (Kotlin / CameraX). `tests/` contains desktop composition, persistence, layout, DirectShow and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
+The maintained clients are `apexcam_pc/` (C# / WinForms), `apexcam/android/` (Kotlin / CameraX), and `web/` (buildless Safari/WebRTC client). `tests/` contains desktop composition, persistence, layout, DirectShow, web bridge, pairing-protocol and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
 
 The DirectShow bridge uses the OBS virtual-camera interface. OBS Studio and other dependencies retain their respective licenses. No OBS driver DLLs are bundled in this source repository.

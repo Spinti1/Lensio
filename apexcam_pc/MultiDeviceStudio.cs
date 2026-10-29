@@ -22,6 +22,23 @@ namespace ApexCam
         private string mainDeviceId, controlledDeviceId;
         private Panel phoneCards;
         private Button addPhone;
+        private WebCameraBridge webCameraBridge;
+        private void ShowAddPhoneMenu() {
+            var menu=new ContextMenuStrip();ApplyMenuTheme(menu);
+            menu.Items.Add("Android phone",null,(s,e)=>MessageBox.Show(this,
+                "Open LensioCam on an Android phone on the same Wi-Fi network. It will connect automatically.\n\n"+
+                "PC address for manual pairing: "+GetLocalIp()+"\n\nUp to four phones can stream together.",
+                "Add Android phone",MessageBoxButtons.OK,MessageBoxIcon.Information));
+            menu.Items.Add("iPhone / Web (preview)",null,(s,e)=> {
+                try {
+                    if(webCameraBridge==null)throw new InvalidOperationException("The camera engine is still starting. Try again in a moment.");
+                    System.Diagnostics.Process.Start(webCameraBridge.ReceiverUrl);
+                }catch(Exception ex){MessageBox.Show(this,ex.Message,"Web camera",MessageBoxButtons.OK,MessageBoxIcon.Information);}
+            });
+            menu.Closed+=(s,e)=>BeginInvoke(new Action(()=>menu.Dispose()));
+            if(addPhone.Visible)menu.Show(addPhone,new Point(0,addPhone.Height));
+            else menu.Show(this,new Point(12,48));
+        }
         private System.Threading.Timer compositionTimer;
         private int composing;
         private volatile bool compositionStopped;
@@ -30,12 +47,8 @@ namespace ApexCam
             LoadPhoneNames();
             phoneCards=new Panel {BackColor=ColorCardBg};
             addPhone=CreateModernButton("Add phone...",ColorButtonDark,0,0,220,25);
-            addPhone.Click += (s,e) => MessageBox.Show(
-                "Open LensioCam on another phone on the same Wi-Fi network. It will appear here automatically.\n\n"+
-                "For a manual connection, enter this PC address in LensioCam: "+GetLocalIp()+
-                "\n\nUp to four phones can stream together. Click a phone name to make it the main camera, then drag or resize cameras in the preview.",
-                "Add phone",MessageBoxButtons.OK,MessageBoxIcon.Information);
-            addPhone.Visible=false;
+            addPhone.Click += (s,e) => ShowAddPhoneMenu();
+            addPhone.Visible=true;
             sourceToolTips.SetToolTip(btnTogglePcAudio,"PC audio is sent to the Main phone.");
             sourceToolTips.SetToolTip(btnToggleMic,"Microphone audio is received from the Main phone.");
             ctrlContent.Controls.Add(phoneCards);
@@ -211,7 +224,7 @@ namespace ApexCam
         {
             if(phoneCards==null)return;
             int count=phoneCards.Controls.Count;
-            addPhone.Visible=count>0;
+            addPhone.Visible=ctrlContent.ClientSize.Height>=192+count*32;
             phoneCards.SetBounds(4,167,width,count*32);
             foreach(Control row in phoneCards.Controls) {
                 row.Width=width;

@@ -45,6 +45,13 @@ namespace ApexCam
         private void RefreshCameraCatalog(bool showMenu)
         {
             if(!showMenu && cameraMenu!=null && cameraMenu.Visible) return;
+            if(controlledDeviceId!=null && controlledDeviceId.StartsWith("web:")) {
+                var webCatalog=webCameraBridge==null?null:webCameraBridge.GetCatalog(controlledDeviceId);
+                if(webCatalog==null){cameraPicker.Text="Pair iPhone / Web to list cameras";return;}
+                BuildCameraMenu(webCatalog);
+                if(showMenu)cameraMenu.Show(cameraPicker,new System.Drawing.Point(0,cameraPicker.Height));
+                return;
+            }
             string host=connectedPhoneHost;
             if(string.IsNullOrEmpty(host) || receiver==null || !receiver.IsConnected) {
                 cameraPicker.Text="Connect phone to list cameras";

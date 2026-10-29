@@ -100,7 +100,7 @@ namespace ApexCam
             panels.DropDownItems.Add("Sources", null, (s,e) => lbSources.Focus());
             panels.DropDownItems.Add("Filters", null, (s,e) => cbPresets.Focus());
             panels.DropDownItems.Add("Camera / Audio", null, (s,e) => btnRes720p.Focus());
-            panels.DropDownItems.Add("Add phone...", null, (s,e) => addPhone.PerformClick());
+            panels.DropDownItems.Add("Add phone...", null, (s,e) => ShowAddPhoneMenu());
             var actions = new ToolStripDropDownButton("Image");
             actions.DropDownItems.Add("Mirror", null, (s,e) => { mirrorH = !mirrorH; });
             actions.DropDownItems.Add("Flip", null, (s,e) => { flipV = !flipV; });
@@ -357,6 +357,10 @@ namespace ApexCam
             btnToggleMic.SetBounds(8+half,117,half,23);
             btnTogglePcAudio.Text = isPcAudioStreaming ? "PC Audio: ON" : "PC Audio: OFF";
             btnToggleMic.Text = isMicStreaming ? "Mic: ON" : "Mic: OFF";
+            bool webMain=mainDeviceId!=null && mainDeviceId.StartsWith("web:");
+            btnTogglePcAudio.Enabled=btnToggleMic.Enabled=!webMain;
+            btnUsb.Enabled=controlledDeviceId==null || !controlledDeviceId.StartsWith("web:");
+            if(webMain) {btnTogglePcAudio.Text="PC Audio: Android";btnToggleMic.Text="Mic: Android";}
             lblAudioStatus.AutoSize = false;
             lblAudioStatus.AutoEllipsis = true;
             lblAudioStatus.SetBounds(4,143,w,18);

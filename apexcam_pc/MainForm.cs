@@ -1812,7 +1812,9 @@ namespace ApexCam
                 receiver.OnDeviceFrameReceived += ProcessDeviceFrame;
 
                 receiver.Start();
-                try { webCameraBridge=new WebCameraBridge(receiver.BoundPort);webCameraBridge.Start(); }
+                try { webCameraBridge=new WebCameraBridge(receiver.BoundPort);webCameraBridge.Start();
+                    SafeBeginInvoke(()=> {try {System.Diagnostics.Process.Start(webCameraBridge.ReceiverUrl);}catch{}});
+                }
                 catch { if(webCameraBridge!=null)webCameraBridge.Dispose();webCameraBridge=null; }
                 try { AdbTunnel.SetupPortForwarding(); } catch { }
             }

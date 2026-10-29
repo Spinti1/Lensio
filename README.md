@@ -14,7 +14,7 @@ LensioCam turns Android phones into wireless webcams. LensioStudio brings them t
 
 **[Open LensioCam Web](https://spinti1.github.io/Lensio/)** in Safari. No native iOS installation, Apple Developer subscription, or IPA renewal is needed.
 
-Use the [Windows web-preview build](https://github.com/Spinti1/Lensio/releases/tag/v2.9.0-web.2), then select **Panels → Add phone → iPhone / Web (preview)**. The receiver walks you through exchanging pairing codes. Keep both devices on the same Wi-Fi, Safari visible with the iPhone screen on, and the PC receiver window open and visible. This first preview supports video; microphone and PC audio remain Android features. Real Safari/device performance still needs validation. Read the [setup, limitations and privacy notes](docs/WEB_CAMERA.md).
+Use the [Windows web-preview build](https://github.com/Spinti1/Lensio/releases/tag/v2.9.0-web.3), then open the simple link above on your iPhone and press **Start camera**. The Windows receiver opens automatically: select the phone name and accept the request on the phone. No codes need to be copied. Keep both devices on the same Wi-Fi, Safari visible with the iPhone screen on, and the PC receiver window open and visible. This first preview supports video; microphone and PC audio remain Android features. Real Safari/device performance still needs validation. Read the [setup, limitations and privacy notes](docs/WEB_CAMERA.md).
 
 ## Get started
 
@@ -33,7 +33,7 @@ LensioCam checks GitHub and can fall back to the local PC update server. Android
 
 ## Privacy
 
-Video and audio travel directly between your devices. There is no hosted media relay or analytics service. Update checks contact GitHub, which receives normal connection metadata. Workspace settings and imported images stay in `%LOCALAPPDATA%\LensioStudio`; they are not part of the repository or release downloads.
+Video and audio travel directly between your devices. There is no hosted media relay or analytics service. The optional iPhone web client uses Cloudflare for temporary device discovery and WebRTC signaling; its video still travels directly between devices. Cloudflare receives normal connection metadata and the temporary signaling data. Update checks contact GitHub, which receives normal connection metadata. Workspace settings and imported images stay in `%LOCALAPPDATA%\LensioStudio`; they are not part of the repository or release downloads.
 
 This repository contains a clean source snapshot, without private Git history, device logs, personal configuration, signing keys or local build caches. Compatibility identifiers such as the Android package `com.apexcam` remain unchanged for existing installations.
 

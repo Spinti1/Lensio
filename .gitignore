@@ -81,6 +81,9 @@ test-data/
 *.pem
 .env
 .env.*
+.wrangler/
+.dev.vars
+.dev.vars.*
 workspace.json
 phone-names.txt
 *.tmp

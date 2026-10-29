@@ -24,7 +24,13 @@ class WebCameraBridgeSmoke {
             int frames=0;receiver.OnDeviceFrameReceived+=(id,b,a,c,t,f,r)=>{Check(id=="web:test","Wrong device");Check(b.Width==32&&b.Height==18,"Wrong dimensions");Interlocked.Increment(ref frames);};receiver.Start();
             using(var bridge=new WebCameraBridge(receiver.BoundPort)){
                 bridge.Start();var url=new Uri(bridge.ReceiverUrl);root=url.GetLeftPart(UriPartial.Authority);token=url.Fragment.Substring("#token=".Length);
-                using(var wc=new WebClient()){Check(wc.DownloadString(root+"/receiver").Contains("Connect iPhone"),"Embedded receiver missing");Check(wc.DownloadString(root+"/app.js").Contains("RTCPeerConnection"),"Embedded JS missing");}
+                using(var wc=new WebClient()){
+                    Check(wc.DownloadString(root+"/receiver").Contains("Connect iPhone"),"Embedded receiver missing");
+                    Check(wc.ResponseHeaders["Content-Security-Policy"].Contains("wss://lensio-connect.pex-am.workers.dev"),"Discovery blocked by receiver CSP");
+                    Check(wc.DownloadString(root+"/app.js").Contains("RTCPeerConnection"),"Embedded JS missing");
+                    Check(wc.DownloadString(root+"/auto-connect.js").Contains("class AutoConnect"),"Discovery client missing");
+                    Check(wc.DownloadString(root+"/config.json").Contains("https://lensio-connect.pex-am.workers.dev"),"Discovery endpoint missing");
+                }
                 string catalog="{\"id\":\"web:test\",\"name\":\"Test iPhone\",\"activeId\":\"default\",\"cameras\":[{\"id\":\"default\",\"label\":\"Back camera\",\"selectable\":true}]}";
                 Reject(()=>Post("/register",Encoding.UTF8.GetBytes(catalog),false),401);
                 Reject(()=>Post("/register",Encoding.UTF8.GetBytes(catalog),true,"https://untrusted.example"),401);

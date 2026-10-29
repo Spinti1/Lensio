@@ -59,7 +59,7 @@ namespace ApexCam
         private static string Text(Dictionary<string,object> d,string key){object v;return d.TryGetValue(key,out v)&&v is string?(string)v:"";}
         private static int HeaderInt(Dictionary<string,string> h,string key,int min,int max){string s;int v;if(!h.TryGetValue(key,out s)||!int.TryParse(s,out v)||v<min||v>max)throw new InvalidDataException();return v;}
         private void Reply(Stream s,int status,string type,byte[] body){
-            string head="HTTP/1.1 "+status+" "+(status==200?"OK":status==204?"No Content":status==401?"Unauthorized":"Bad Request")+"\r\nContent-Type: "+type+"\r\nContent-Length: "+body.Length+"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'\r\n\r\n";
+            string head="HTTP/1.1 "+status+" "+(status==200?"OK":status==204?"No Content":status==401?"Unauthorized":"Bad Request")+"\r\nContent-Type: "+type+"\r\nContent-Length: "+body.Length+"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' wss://lensio-connect.pex-am.workers.dev; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'\r\n\r\n";
             var bytes=Encoding.ASCII.GetBytes(head);s.Write(bytes,0,bytes.Length);if(body.Length>0)s.Write(body,0,body.Length);
         }
         private void Handle(TcpClient c){
@@ -69,7 +69,7 @@ namespace ApexCam
                 string host;if(!h.TryGetValue("Host",out host)||host!="127.0.0.1:"+port)throw new InvalidDataException();
                 if(method=="GET"){
                     string asset=path=="/receiver"?"index.html":path.TrimStart('/'),type="";
-                    switch(asset){case "index.html":type="text/html; charset=utf-8";break;case "app.js":case "protocol.js":type="text/javascript; charset=utf-8";break;case "style.css":type="text/css";break;case "manifest.webmanifest":type="application/manifest+json";break;case "icon.svg":type="image/svg+xml";break;default:throw new InvalidDataException();}
+                    switch(asset){case "index.html":type="text/html; charset=utf-8";break;case "config.json":type="application/json";break;case "auto-connect.js":case "app.js":case "protocol.js":type="text/javascript; charset=utf-8";break;case "style.css":type="text/css";break;case "manifest.webmanifest":type="application/manifest+json";break;case "icon.svg":type="image/svg+xml";break;default:throw new InvalidDataException();}
                     using(var resource=Assembly.GetExecutingAssembly().GetManifestResourceStream("LensioWeb."+asset)){
                         if(resource==null)throw new InvalidDataException();using(var ms=new MemoryStream()){resource.CopyTo(ms);Reply(s,200,type,ms.ToArray());}}
                     return;

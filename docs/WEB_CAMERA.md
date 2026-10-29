@@ -13,6 +13,8 @@ The native Android APK continues its existing automatic USB (ADB) and Wi-Fi disc
 
 After a successful web connection, the phone remembers that PC's pairing room in its own local browser storage. A later visit to the plain LensioCam Web URL can reconnect after Start camera. Scanning another PC's QR selects its room instead. LensioStudio keeps its private receiver key in `%LOCALAPPDATA%\LensioStudio\web-pairing.key`; preserving that file keeps the QR stable across restarts. Do not publish it or share screenshots of a real pairing QR outside your own devices.
 
+The phone page contains only the camera preview, **Start camera & connect**, and **Stop**. A small preview status and a message shown only on errors replace the previous setup panels. Camera, resolution, zoom and torch are controlled in LensioStudio on the PC; existing device preferences remain stored.
+
 ## Network and device limits
 
 Pairing uses the private QR room rather than guessing router membership from public IP addresses, so IPv4/IPv6 differences and shared ISP addresses no longer determine discovery. Receiving the camera still requires direct WebRTC connectivity: the same Wi-Fi without client isolation is recommended. There is no TURN/STUN media relay. A VPN, guest network, local firewall, browser or OS restriction can still prevent the direct media connection.

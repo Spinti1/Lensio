@@ -25,7 +25,7 @@ class WebCameraBridgeSmoke {
             using(var bridge=new WebCameraBridge(receiver.BoundPort)){
                 bridge.Start();var url=new Uri(bridge.ReceiverUrl);root=url.GetLeftPart(UriPartial.Authority);token=url.Fragment.Substring("#token=".Length);
                 using(var wc=new WebClient()){
-                    Check(wc.DownloadString(root+"/receiver").Contains("Connect iPhone"),"Embedded receiver missing");
+                    Check(wc.DownloadString(root+"/receiver").Contains("Start camera &amp; connect"),"Embedded phone page missing");
                     Check(wc.ResponseHeaders["Content-Security-Policy"].Contains("wss://lensio-connect.pex-am.workers.dev"),"Discovery blocked by receiver CSP");
                     Check(wc.DownloadString(root+"/app.js").Contains("RTCPeerConnection"),"Embedded JS missing");
                     Check(wc.DownloadString(root+"/auto-connect.js").Contains("class AutoConnect"),"Discovery client missing");

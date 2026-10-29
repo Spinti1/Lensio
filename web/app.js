@@ -1,197 +1,118 @@
-import {encodeCode,decodeCode,gatherIce} from './protocol.js';
 import {AutoConnect} from './auto-connect.js?v=6';
-const $=id=>document.getElementById(id);
-const local=$('localVideo'),remote=$('remoteVideo');
-const receiver=location.pathname==='/receiver' && location.hostname==='127.0.0.1';
-const params=new URLSearchParams(location.hash.slice(1)),token=params.get('token');
-const scannedRoom=params.get('room');
-const pairRoom=/^[a-f0-9]{64}$/.test(scannedRoom||'')?scannedRoom:recalled('pairRoom','');
-const PUBLIC_URL='https://spinti1.github.io/Lensio/';
-const receiverSession=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
-let peer,channel,stream,wake,stopped=true,bridgeId,postBusy=false,frameHandle,pollTimer;
-let generation=0,changing=false,deviceId='',catalog,frames=0,reportedFps=30,statsAt=performance.now();
-let discovery=null,discoveryEndpoint='',pendingRequest=null;
-const DEFAULT_DISCOVERY='https://lensio-connect.pex-am.workers.dev';
-const state=text=>$('state').textContent=text;
-function error(e){$('message').textContent=e?.message||String(e);}
+import {gatherIce} from './protocol.js';
+
+const $=id=>document.getElementById(id),video=$('localVideo');
+const start=$('start'),stop=$('stop'),placeholder=$('placeholder'),notice=$('message');
+function saved(key,fallback=''){try{return localStorage.getItem('lensio.'+key)||fallback;}catch{return fallback;}}
 function remember(key,value){try{localStorage.setItem('lensio.'+key,value);}catch{}}
-function recalled(key,fallback){try{return localStorage.getItem('lensio.'+key)||fallback;}catch{return fallback;}}
-function identity(){let id=recalled('id','');if(!id){id=crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');remember('id',id);}return 'web:'+id;}
-const phoneId=identity();
-$('phoneName').value=recalled('name',/iPhone|iPad/.test(navigator.userAgent)?'iPhone':'Web camera');
-$('resolution').value=recalled('resolution','720');
-$('phoneName').addEventListener('change',()=>{remember('name',$('phoneName').value);sendCatalog().catch(error);});
-async function bridge(path,data,headers={}) {
-  const response=await fetch(path,{method:'POST',headers:{Authorization:'Bearer '+token,'X-Session':receiverSession,...headers},body:data,cache:'no-store',signal:typeof AbortSignal!=='undefined' && AbortSignal.timeout?AbortSignal.timeout(8000):undefined});
-  if(!response.ok)throw new Error(response.status===401?'Receiver expired. Reopen iPhone / Web from LensioStudio.':'LensioStudio receiver: HTTP '+response.status);
-  return response.status===204?null:response.json();
-}
-async function keepAwake(){try{if(!wake && navigator.wakeLock && document.visibilityState==='visible'){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null;});}}catch{}}
+const scanned=new URLSearchParams(location.hash.slice(1)).get('room');
+const validRoom=value=>/^[a-f0-9]{64}$/.test(value||'');
+const room=validRoom(scanned)?scanned:saved('pairRoom');
+if(scanned)history.replaceState(null,'',location.pathname+location.search);
+let id=saved('id');
+if(!id){id=crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');remember('id',id);}
+const phoneId='web:'+id;
+const name=saved('name',/iPhone|iPad/.test(navigator.userAgent)?'iPhone':/Android/.test(navigator.userAgent)?'Android phone':'Web camera').slice(0,60);
+let resolution=saved('resolution','720'),cameraId='',stream=null,peer=null,channel=null,discovery=null,wake=null;
+let session=0,changing=false,controls=Promise.resolve();
+
+function state(phase,text){document.body.dataset.phase=phase;$('state').textContent=text;}
+function clearNotice(){notice.hidden=true;notice.textContent='';}
+function showError(error){notice.textContent=error?.message||String(error);notice.hidden=false;}
+async function keepAwake(){try{if(!wake&&navigator.wakeLock&&document.visibilityState==='visible'){const run=session,lock=await navigator.wakeLock.request('screen');if(run!==session||!stream){await lock.release();return;}wake=lock;wake.addEventListener('release',()=>{if(wake===lock)wake=null;});}}catch{}}
 async function releaseWake(){if(wake){await wake.release().catch(()=>{});wake=null;}}
-function closePeer(){generation++;if(peer)peer.close();peer=null;channel=null;clearTimeout(pollTimer);pollTimer=null;bridgeId=null;if(frameHandle){if(remote.cancelVideoFrameCallback)remote.cancelVideoFrameCallback(frameHandle);else cancelAnimationFrame(frameHandle);frameHandle=null;}remote.srcObject=null;}
-async function stopCamera(){stopped=true;discovery?.close();discovery=null;pendingRequest=null;$('autoRequest').hidden=true;closePeer();if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;local.srcObject=null;await releaseWake();$('placeholder').hidden=false;$('start').disabled=false;$('stop').disabled=true;$('connect').disabled=true;$('answerSection').hidden=true;state('Camera stopped');}
-async function startCamera(id=deviceId){
-  if(changing)return;changing=true;
-  try {
-    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Open this page in Safari over HTTPS to use the camera.');
-    const height=$('resolution').value==='1080'?1080:720;
-    // Release the old track before opening another sensor. iOS can reject two simultaneous cameras.
-    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
-    const video={width:{ideal:height*16/9},height:{ideal:height},frameRate:{ideal:30,max:30}};
-    if(id)video.deviceId={exact:id};else video.facingMode={ideal:'environment'};
-    try{stream=await navigator.mediaDevices.getUserMedia({video,audio:false});}
-    catch(e){if(id && (e.name==='OverconstrainedError'||e.name==='NotFoundError')){delete video.deviceId;video.facingMode={ideal:'environment'};stream=await navigator.mediaDevices.getUserMedia({video,audio:false});}else throw e;}
-    const track=stream.getVideoTracks()[0];track.addEventListener('ended',()=>{state('Camera interrupted');error(new Error('Camera access ended. Keep Safari open, then press Start camera.'));$('start').disabled=false;$('connect').disabled=true;});
-    deviceId=track.getSettings().deviceId||'';remember('camera',deviceId);remember('resolution',$('resolution').value);
-    local.srcObject=stream;await local.play();
-    if(peer){const sender=peer.getSenders().find(s=>s.track?.kind==='video');if(sender)await sender.replaceTrack(track);}
-    stopped=false;$('placeholder').hidden=true;$('start').disabled=true;$('stop').disabled=false;$('connect').disabled=false;
-    const settings=track.getSettings();$('format').textContent=`${settings.width||'?'} × ${settings.height||'?'}`;
-    await sendCatalog();await keepAwake();state(channel?.readyState==='open'?'Streaming':'Camera ready');$('message').textContent='';
-    if(!discovery && discoveryEndpoint)startDiscovery();
-  } catch(e){$('start').disabled=false;$('stop').disabled=!stream;$('connect').disabled=!stream;error(e);throw e;}
-  finally{changing=false;}
+function closePeer(){const previous=peer;peer=null;channel=null;if(previous)previous.close();}
+
+async function stopCamera(){
+  session++;discovery?.close();discovery=null;closePeer();
+  if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;
+  await releaseWake();placeholder.hidden=false;start.disabled=changing;stop.disabled=true;clearNotice();state('off','Camera off');
 }
-async function sendCatalog(){
+
+async function capture(id,run){
+  if(changing)return;changing=true;
+  try{
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Open LensioCam in Safari or Chrome over HTTPS.');
+    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+    const height=resolution==='1080'?1080:720;
+    const constraints={width:{ideal:height*16/9},height:{ideal:height},frameRate:{ideal:30,max:30}};
+    if(id)constraints.deviceId={exact:id};else constraints.facingMode={ideal:'environment'};
+    let next;
+    try{next=await navigator.mediaDevices.getUserMedia({video:constraints,audio:false});}
+    catch(e){if(id&&['OverconstrainedError','NotFoundError'].includes(e.name)){delete constraints.deviceId;constraints.facingMode={ideal:'environment'};next=await navigator.mediaDevices.getUserMedia({video:constraints,audio:false});}else throw e;}
+    if(run!==session){next.getTracks().forEach(t=>t.stop());return;}
+    stream=next;const track=stream.getVideoTracks()[0];cameraId=track.getSettings().deviceId||'';
+    remember('camera',cameraId);remember('resolution',resolution);
+    track.addEventListener('ended',()=>{if(run===session&&stream?.getVideoTracks()[0]===track){stopCamera().then(()=>{state('error','Camera interrupted');showError(new Error('Camera access ended. Press Start camera & connect to retry.'));});}});
+    video.srcObject=stream;await video.play();if(run!==session)return;
+    const sender=peer?.getSenders().find(s=>s.track?.kind==='video');if(sender)await sender.replaceTrack(track);
+    placeholder.hidden=true;stop.disabled=false;await catalog();if(run===session&&stream)await keepAwake();
+  }finally{changing=false;if(!stream)start.disabled=false;}
+}
+
+async function catalog(){
   if(!stream)return;
   const track=stream.getVideoTracks()[0],settings=track.getSettings(),caps=track.getCapabilities?track.getCapabilities():{};
-  const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput' && d.deviceId);
-  const selected=deviceId;$('cameras').replaceChildren();
-  devices.forEach((d,i)=>{const option=document.createElement('option');option.value=d.deviceId;option.textContent=d.label||'Camera '+(i+1);$('cameras').append(option);});
-  $('cameras').value=selected;
-  catalog={id:phoneId,name:($('phoneName').value.trim()||'iPhone').slice(0,60),activeId:selected,zoom:settings.zoom||1,torch:!!settings.torch,stabilization:'off',
-    cameras:devices.map((d,i)=>({id:d.deviceId,label:d.label||'Camera '+(i+1),selectable:true,facing:d.deviceId===selected && settings.facingMode==='user'?'Front':'Back',maxDigitalZoom:d.deviceId===selected?(caps.zoom?.max||1):1,flash:d.deviceId===selected && !!caps.torch,eis:false,ois:false}))};
-  if(channel?.readyState==='open')channel.send(JSON.stringify({kind:'catalog',catalog}));
+  const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'&&d.deviceId);
+  if(!stream||stream.getVideoTracks()[0]!==track)return;
+  const value={id:phoneId,name,activeId:cameraId,zoom:settings.zoom||1,torch:!!settings.torch,stabilization:'off',
+    cameras:devices.map((d,i)=>({id:d.deviceId,label:d.label||'Camera '+(i+1),selectable:true,facing:d.deviceId===cameraId&&settings.facingMode==='user'?'Front':'Back',maxDigitalZoom:d.deviceId===cameraId?(caps.zoom?.max||1):1,flash:d.deviceId===cameraId&&!!caps.torch,eis:false,ois:false}))};
+  if(channel?.readyState==='open')channel.send(JSON.stringify({kind:'catalog',catalog:value}));
 }
-async function applyControl(values){
-  if(values.resolution){$('resolution').value=String(values.resolution).startsWith('1080')?'1080':'720';}
-  if(values.cameraId || values.resolution)await startCamera(values.cameraId||deviceId);
+
+async function control(values,run){
+  if(run!==session||!stream)return;
+  if(values.resolution)resolution=String(values.resolution).startsWith('1080')?'1080':'720';
+  if(values.cameraId||values.resolution)await capture(values.cameraId||cameraId,run);
+  if(run!==session)return;
   const track=stream?.getVideoTracks()[0],caps=track?.getCapabilities?track.getCapabilities():{};
-  if(track && values.zoom!==undefined && caps.zoom)await track.applyConstraints({advanced:[{zoom:Math.max(caps.zoom.min,Math.min(caps.zoom.max,Number(values.zoom)))}]});
-  if(track && values.toggleTorch && caps.torch)await track.applyConstraints({advanced:[{torch:!track.getSettings().torch}]});
-  await sendCatalog();
+  if(track&&values.zoom!==undefined&&caps.zoom)await track.applyConstraints({advanced:[{zoom:Math.max(caps.zoom.min,Math.min(caps.zoom.max,Number(values.zoom)))}]});
+  if(track&&values.toggleTorch&&caps.torch)await track.applyConstraints({advanced:[{torch:!track.getSettings().torch}]});
+  await catalog();
 }
-function makePeer(){
-  const pc=new RTCPeerConnection({iceServers:[]});peer=pc;
-  pc.addEventListener('connectionstatechange',()=>{
-    if(pc!==peer)return;
-    const s=pc.connectionState;state(s==='connected'?'Streaming':s==='failed'?'Connection failed':s);
-    if(s==='connected'){if(!receiver)$('pairing').open=false;if(/^[a-f0-9]{64}$/.test(pairRoom||''))remember('pairRoom',pairRoom);$('message').textContent='';}
-    if(s==='failed'){error(new Error('Connection failed. Check both devices are on the same Wi-Fi, without client isolation, and create a new pairing code.'));if(receiver && bridgeId)bridge('/disconnect',JSON.stringify({id:bridgeId})).catch(()=>{});}
-  });
-  return pc;
-}
-function bindChannel(dc){
-  channel=dc;dc.onopen=()=>{if(dc===channel && !receiver)sendCatalog().catch(error);};
-  dc.onmessage=async event=>{
-    try{
-      if(dc!==channel || typeof event.data!=='string' || event.data.length>32768)return;
-      const value=JSON.parse(event.data);
-      if(!receiver && value.kind==='control'){await applyControl(value.values);return;}
-      if(receiver && value.kind==='catalog'){
-        const incoming=value.catalog;
-        if(!incoming || !/^web:[a-zA-Z0-9-]{1,80}$/.test(incoming.id) || !Array.isArray(incoming.cameras) || incoming.cameras.length>32)throw new Error('Invalid camera information.');
-        if(bridgeId && bridgeId!==incoming.id)throw new Error('Phone identity changed. Pair again.');
-        if(!bridgeId){await bridge('/register',JSON.stringify(incoming));if(dc!==channel)return;bridgeId=incoming.id;pollCommands();}
-        else await bridge('/catalog',JSON.stringify(incoming));
-      }
-    }catch(e){error(e);}
+
+async function answer(offer,run){
+  if(run!==session||!stream)return;
+  closePeer();const pc=new RTCPeerConnection({iceServers:[]});peer=pc;
+  state('connecting','Connecting…');
+  pc.onconnectionstatechange=()=>{
+    if(pc!==peer||run!==session)return;
+    if(pc.connectionState==='connected'){remember('pairRoom',room);clearNotice();state('streaming','Connected');}
+    else if(pc.connectionState==='disconnected')state('connecting','Reconnecting…');
+    else if(pc.connectionState==='failed'){closePeer();discovery?.cancel();state('connecting','Waiting for LensioStudio');showError(new Error('Connection interrupted. Check the phone and PC are on the same Wi-Fi.'));}
   };
-  dc.onclose=()=>{if(dc!==channel)return;state('Disconnected');if(receiver && bridgeId){const id=bridgeId;bridgeId=null;bridge('/disconnect',JSON.stringify({id})).catch(()=>{});}};
-}
-async function createAnswer(autoOffer=null){
-  if(!stream)await startCamera();
-  const description=autoOffer||await decodeCode($('offer').value,'offer');closePeer();
-  const pc=makePeer();pc.ondatachannel=e=>bindChannel(e.channel);
-  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-  await pc.setRemoteDescription(description);
-  await pc.setLocalDescription(await pc.createAnswer());await gatherIce(pc);
-  // Retain camera resolution during congestion; let the browser use its hardware video encoder.
+  pc.ondatachannel=event=>{
+    if(pc!==peer)return;const dc=event.channel;channel=dc;
+    dc.onopen=()=>{if(dc===channel)catalog().catch(showError);};
+    dc.onmessage=event=>{
+      if(dc!==channel||typeof event.data!=='string'||event.data.length>32768)return;
+      try{const value=JSON.parse(event.data);if(value.kind==='control')controls=controls.then(()=>control(value.values,run)).catch(e=>{if(run===session)showError(e);});}catch(e){showError(e);}
+    };
+    dc.onclose=()=>{if(dc===channel&&run===session)state('connecting','Waiting for LensioStudio');};
+  };
+  stream.getTracks().forEach(track=>pc.addTrack(track,stream));
+  await pc.setRemoteDescription(offer);await pc.setLocalDescription(await pc.createAnswer());await gatherIce(pc);
+  if(pc!==peer||run!==session)return;
   const sender=pc.getSenders().find(s=>s.track?.kind==='video');
-  if(sender){try{const p=sender.getParameters();p.degradationPreference='maintain-resolution';if(p.encodings?.length){p.encodings[0].maxBitrate=$('resolution').value==='1080'?16000000:8000000;p.encodings[0].maxFramerate=30;}await sender.setParameters(p);}catch{/* Some Safari versions do not expose encoder parameters. */}}
-  if(autoOffer){discovery.answer({type:pc.localDescription.type,sdp:pc.localDescription.sdp});state('Connecting…');}
-  else {$('answer').value=await encodeCode(pc.localDescription);$('answerSection').hidden=false;state('Return code ready');}
+  if(sender){try{const p=sender.getParameters();p.degradationPreference='maintain-resolution';if(p.encodings?.length){p.encodings[0].maxBitrate=resolution==='1080'?16000000:8000000;p.encodings[0].maxFramerate=30;}await sender.setParameters(p);}catch{/* Unsupported Safari encoder options do not interrupt capture. */}}
+  if(pc===peer&&run===session)discovery.answer({type:pc.localDescription.type,sdp:pc.localDescription.sdp});
 }
-async function createOffer(autoTarget=null){
-  if(bridgeId)await bridge('/disconnect',JSON.stringify({id:bridgeId})).catch(()=>{});
-  closePeer();const pc=makePeer();pc.addTransceiver('video',{direction:'recvonly'});bindChannel(pc.createDataChannel('lensio-control'));
-  pc.ontrack=async e=>{remote.srcObject=e.streams[0]||new MediaStream([e.track]);await remote.play();pumpFrames();};
-  await pc.setLocalDescription(await pc.createOffer());await gatherIce(pc);
-  if(autoTarget){discovery.request(autoTarget,{type:pc.localDescription.type,sdp:pc.localDescription.sdp});state('Accept on iPhone');}
-  else {const code=await encodeCode(pc.localDescription);$('invite').value=PUBLIC_URL+'#offer='+code;$('inviteSection').hidden=false;$('remoteAnswer').value='';state('Waiting for iPhone');}
-}
-function startDiscovery(){
-  if(discovery || !discoveryEndpoint || (!receiver&&!stream))return;
-  $('autoPanel').hidden=false;
-  discovery=new AutoConnect({endpoint:discoveryEndpoint,room:/^[a-f0-9]{64}$/.test(pairRoom||'')?pairRoom:undefined,role:receiver?'host':'phone',name:receiver?'LensioStudio on Windows':$('phoneName').value,
-    onStatus:text=>$('autoStatus').textContent=text,
-    onDiagnostic:text=>$('autoDiagnostic').textContent=text,
-    onDevices:devices=>{
-      if(!receiver)return;$('autoDevices').replaceChildren();
-      $('autoStatus').textContent=devices.length?'Select your phone. Accept the request on its screen.':'Waiting for a phone. Open LensioCam Web in Safari and press Start camera.';
-      for(const d of devices){const b=document.createElement('button');b.textContent='Connect '+d.name;b.className='primary';b.onclick=async()=>{b.disabled=true;try{discovery.cancel();await createOffer(d.id);}catch(e){error(e);b.disabled=false;}};$('autoDevices').append(b);}
-    },
-    onRequest:async request=>{
-      if(/^[a-f0-9]{64}$/.test(pairRoom||'')){$('autoStatus').textContent='Connecting to your paired LensioStudio…';await createAnswer(request.offer);return;}
-      pendingRequest=request;$('autoRequest').hidden=false;$('autoHost').textContent=request.name;
-      $('autoStatus').textContent='A Windows receiver wants to use this camera. Only accept your own PC.';
-    },
-    onAnswer:async answer=>{if(!peer)throw new Error('Pairing expired. Select the phone again.');await peer.setRemoteDescription(answer);state('Connecting…');},
-    onGone:()=>{if(peer?.connectionState==='connected')return;pendingRequest=null;$('autoRequest').hidden=true;closePeer();state('Waiting for device');}
-  });
-}
-action('acceptAuto',async()=>{const request=pendingRequest;if(!request)throw new Error('Pairing request expired.');pendingRequest=null;$('autoRequest').hidden=true;await createAnswer(request.offer);});
-action('rejectAuto',async()=>{pendingRequest=null;$('autoRequest').hidden=true;discovery.cancel();});
-async function loadDiscovery(){
-  $('autoPanel').hidden=false;
-  discoveryEndpoint=DEFAULT_DISCOVERY;
+
+start.addEventListener('click',async()=>{
+  if(start.disabled||changing)return;clearNotice();
+  if(!validRoom(room)){showError(new Error('Scan the QR in LensioStudio on your PC first.'));return;}
+  discovery?.close();discovery=null;closePeer();controls=Promise.resolve();
+  const run=++session;start.disabled=true;stop.disabled=false;state('connecting','Starting camera…');
   try{
-    const response=await fetch('./config.json?v=6',{cache:'no-store'});
-    if(!response.ok)throw new Error('Discovery configuration could not be loaded.');
-    const config=await response.json();
-    if(typeof config.discoveryEndpoint!=='string'||!/^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev$/.test(config.discoveryEndpoint))throw new Error('Invalid discovery configuration.');
-    discoveryEndpoint=config.discoveryEndpoint;
-  }catch{ $('message').textContent='Using built-in discovery configuration. Reload this page if discovery does not start.'; }
-  $('autoStatus').textContent=receiver?'Looking for devices…':'Press Start camera to become visible to LensioStudio.';
-  if(receiver)$('newPair').textContent='Manual pairing (fallback)';else $('pairing').open=false;
-  try{startDiscovery();}catch(e){$('autoStatus').textContent='Discovery could not start: '+e.message;}
-}
-async function pollCommands(){
-  if(!bridgeId)return;const id=bridgeId,run=generation;
-  try{const values=await bridge('/commands',JSON.stringify({id}));if(run!==generation)return;for(const command of values.commands)if(channel?.readyState==='open')channel.send(JSON.stringify({kind:'control',values:command}));}
-  catch(e){error(e);closePeer();return;}
-  if(bridgeId && run===generation)pollTimer=setTimeout(pollCommands,200);
-}
-const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{alpha:false});
-function pumpFrames(){
-  const run=generation;
-  function tick(now){
-    if(run!==generation || !peer)return;
-    frameHandle=remote.requestVideoFrameCallback?remote.requestVideoFrameCallback(tick):requestAnimationFrame(tick);
-    if(postBusy || !bridgeId || !remote.videoWidth || now-lastFrame<30)return;
-    lastFrame=now;postBusy=true;
-    canvas.width=remote.videoWidth;canvas.height=remote.videoHeight;ctx.drawImage(remote,0,0);
-    const id=bridgeId,width=canvas.width,height=canvas.height;
-    canvas.toBlob(async blob=>{
-      try{if(!blob || run!==generation)return;
-        await bridge('/frame',blob,{'X-Device':id,'X-Width':String(width),'X-Height':String(height),'X-Fps':String(reportedFps),'Content-Type':'image/jpeg'});
-        frames++;const elapsed=performance.now()-statsAt;if(elapsed>1000){reportedFps=Math.max(1,Math.min(60,Math.round(frames*1000/elapsed)));$('receiverStats').textContent=`${width} × ${height} · ${reportedFps} fps`;frames=0;statsAt=performance.now();}
-      }catch(e){error(e);closePeer();}finally{postBusy=false;}
-    },'image/jpeg',0.94);
-  }
-  let lastFrame=0;frameHandle=remote.requestVideoFrameCallback?remote.requestVideoFrameCallback(tick):requestAnimationFrame(tick);
-}
-function action(id,fn){$(id).addEventListener('click',async()=>{const b=$(id);b.disabled=true;$('message').textContent='';try{await fn();}catch(e){error(e);}finally{b.disabled=(id==='start' && !!stream);}});}
-async function copy(id){try{await navigator.clipboard.writeText($(id).value);$('message').textContent='Copied. Paste it on your other device.';}catch{$(id).focus();$(id).select();$('message').textContent='Copy the selected text and paste it on your other device.';}}
-action('start',()=>startCamera(recalled('camera','')));action('stop',stopCamera);action('connect',createAnswer);action('newPair',createOffer);
-action('finish',async()=>{if(!peer)throw new Error('Create a pairing link first.');await peer.setRemoteDescription(await decodeCode($('remoteAnswer').value,'answer'));state('Connecting…');});
-action('copyInvite',()=>copy('invite'));action('copyAnswer',()=>copy('answer'));
-$('cameras').addEventListener('change',()=>startCamera($('cameras').value).catch(()=>{}));
-$('resolution').addEventListener('change',()=>{remember('resolution',$('resolution').value);if(stream)startCamera().catch(()=>{});});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(!stopped)keepAwake();}else if(peer)error(new Error(receiver?'Keep this receiver window visible to maintain frame rate.':'Keep Safari visible and your screen on while streaming.'));});
-addEventListener('pagehide',()=>{discovery?.close();if(receiver && bridgeId)fetch('/disconnect',{method:'POST',headers:{Authorization:'Bearer '+token,'X-Session':receiverSession},body:JSON.stringify({id:bridgeId}),keepalive:true}).catch(()=>{});closePeer();if(stream)stream.getTracks().forEach(t=>t.stop());releaseWake();});
-if(receiver){$('sender').hidden=true;$('receiver').hidden=false;$('heading').textContent='Your iPhone. In your scene.';$('subtitle').textContent='Pair once for this session. LensioStudio handles composition, filters and virtual camera output.';if(!token)error(new Error('Open this receiver from LensioStudio.'));}
-else {const offer=params.get('offer');if(offer)$('offer').value=offer;if(offer||scannedRoom)history.replaceState(null,'',location.pathname+location.search);
-  if(pairRoom){$('start').textContent='Start camera & connect';$('subtitle').textContent='Your camera connects automatically to the PC whose QR you scanned. Keep this page open and your phone screen on.';$('pairing').hidden=true;}
-}
-loadDiscovery();
+    await capture(saved('camera'),run);if(run!==session)return;
+    state('connecting','Waiting for LensioStudio');
+    discovery=new AutoConnect({endpoint:'https://lensio-connect.pex-am.workers.dev',room,role:'phone',name,
+      onRequest:async request=>{try{await answer(request.offer,run);}catch(e){if(run===session){showError(e);discovery?.cancel();state('connecting','Waiting for LensioStudio');}}},
+      onGone:()=>{if(run!==session||peer?.connectionState==='connected')return;closePeer();state('connecting','Waiting for LensioStudio');},
+      onStatus:text=>{if(run===session&&peer?.connectionState!=='connected'&&/unavailable|disconnected/i.test(text))state('connecting','Reconnecting…');}
+    });
+  }catch(e){if(run===session){await stopCamera();state('error','Unable to connect');showError(e);}}
+});
+stop.addEventListener('click',stopCamera);
+document.addEventListener('visibilitychange',()=>{if(stream&&document.visibilityState==='visible')keepAwake();});
+addEventListener('pagehide',()=>{session++;discovery?.close();closePeer();if(stream)stream.getTracks().forEach(t=>t.stop());releaseWake();});

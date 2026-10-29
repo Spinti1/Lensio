@@ -2,7 +2,7 @@ name: Publish LensioCam Web
 on:
   push:
     branches: [main]
-    paths: ['web/**', 'connect/**', 'tests/discovery.test.mjs', '.github/workflows/pages.yml']
+    paths: ['web/**', 'connect/**', 'tests/discovery.test.mjs', 'tests/phone-camera.test.mjs', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,8 @@ jobs:
         run: node tests/web-protocol.test.mjs
       - name: Validate device discovery
         run: node tests/discovery.test.mjs
+      - name: Validate phone camera controls
+        run: node tests/phone-camera.test.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

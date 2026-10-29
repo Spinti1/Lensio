@@ -64,7 +64,7 @@ namespace ApexCam
         }
         private void Handle(TcpClient c){
             try{var s=c.GetStream();string[] first=Line(s,2048).Split(' ');if(first.Length!=3)throw new InvalidDataException();
-                string method=first[0],path=first[1];var h=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);int total=0;
+                string method=first[0],path=first[1].Split('?')[0];var h=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);int total=0;
                 for(int i=0;i<40;i++){string line=Line(s,2048);total+=line.Length;if(total>8192)throw new InvalidDataException();if(line.Length==0)break;int colon=line.IndexOf(':');if(colon<1 || i==39)throw new InvalidDataException();h[line.Substring(0,colon)]=line.Substring(colon+1).Trim();}
                 string host;if(!h.TryGetValue("Host",out host)||host!="127.0.0.1:"+port)throw new InvalidDataException();
                 if(method=="GET"){

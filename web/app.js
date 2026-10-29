@@ -1,5 +1,5 @@
 import {encodeCode,decodeCode,gatherIce} from './protocol.js';
-import {AutoConnect} from './auto-connect.js';
+import {AutoConnect} from './auto-connect.js?v=20261029-4';
 const $=id=>document.getElementById(id);
 const local=$('localVideo'),remote=$('remoteVideo');
 const receiver=location.pathname==='/receiver' && location.hostname==='127.0.0.1';
@@ -9,6 +9,7 @@ const receiverSession=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b
 let peer,channel,stream,wake,stopped=true,bridgeId,postBusy=false,frameHandle,pollTimer;
 let generation=0,changing=false,deviceId='',catalog,frames=0,reportedFps=30,statsAt=performance.now();
 let discovery=null,discoveryEndpoint='',pendingRequest=null;
+const DEFAULT_DISCOVERY='https://lensio-connect.pex-am.workers.dev';
 const state=text=>$('state').textContent=text;
 function error(e){$('message').textContent=e?.message||String(e);}
 function remember(key,value){try{localStorage.setItem('lensio.'+key,value);}catch{}}
@@ -138,12 +139,18 @@ function startDiscovery(){
 action('acceptAuto',async()=>{const request=pendingRequest;if(!request)throw new Error('Pairing request expired.');pendingRequest=null;$('autoRequest').hidden=true;await createAnswer(request.offer);});
 action('rejectAuto',async()=>{pendingRequest=null;$('autoRequest').hidden=true;discovery.cancel();});
 async function loadDiscovery(){
-  try{const response=await fetch('./config.json',{cache:'no-store'});if(!response.ok)return;const config=await response.json();
-    if(typeof config.discoveryEndpoint==='string'&&/^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev$/.test(config.discoveryEndpoint)){
-      discoveryEndpoint=config.discoveryEndpoint;$('autoPanel').hidden=false;$('autoStatus').textContent=receiver?'Looking for devices…':'Press Start camera to become visible to LensioStudio.';
-      if(receiver){$('newPair').textContent='Manual pairing (fallback)';startDiscovery();}else{$('pairing').open=false;startDiscovery();}
-    }
-  }catch{/* Manual pairing remains usable if discovery configuration is unavailable. */}
+  $('autoPanel').hidden=false;
+  discoveryEndpoint=DEFAULT_DISCOVERY;
+  try{
+    const response=await fetch('./config.json?v=20261029-4',{cache:'no-store'});
+    if(!response.ok)throw new Error('Discovery configuration could not be loaded.');
+    const config=await response.json();
+    if(typeof config.discoveryEndpoint!=='string'||!/^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev$/.test(config.discoveryEndpoint))throw new Error('Invalid discovery configuration.');
+    discoveryEndpoint=config.discoveryEndpoint;
+  }catch{ $('message').textContent='Using built-in discovery configuration. Reload this page if discovery does not start.'; }
+  $('autoStatus').textContent=receiver?'Looking for devices…':'Press Start camera to become visible to LensioStudio.';
+  if(receiver)$('newPair').textContent='Manual pairing (fallback)';else $('pairing').open=false;
+  try{startDiscovery();}catch(e){$('autoStatus').textContent='Discovery could not start: '+e.message;}
 }
 async function pollCommands(){
   if(!bridgeId)return;const id=bridgeId,run=generation;

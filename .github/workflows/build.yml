@@ -19,7 +19,9 @@ jobs:
           $compiler="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           Copy-Item artifacts/LensioStudio.exe ./LensioStudio.exe
           foreach($name in @('FilterBehaviorSmoke','OverlayGeometrySmoke','CameraCompositionSmoke','MultiDeviceSmoke','StudioLayoutSmoke','WorkspacePersistenceSmoke','GitHubUpdaterSmoke')) {
-            & $compiler /nologo /r:System.dll,System.Core.dll,System.Drawing.dll,System.Windows.Forms.dll,System.Web.Extensions.dll /r:LensioStudio.exe "/out:$name.exe" "tests/$name.cs"
+            $source=Join-Path $env:GITHUB_WORKSPACE "tests\$name.cs"
+            $output=Join-Path $env:GITHUB_WORKSPACE "$name.exe"
+            & $compiler /nologo '/r:System.dll,System.Core.dll,System.Drawing.dll,System.Windows.Forms.dll,System.Web.Extensions.dll' '/r:LensioStudio.exe' "/out:$output" $source
             if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
             & ".\$name.exe"
             if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
@@ -36,7 +38,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
       - name: Build and test Android
         run: |
           chmod +x apexcam/android/gradlew

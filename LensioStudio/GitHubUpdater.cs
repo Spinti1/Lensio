@@ -40,17 +40,19 @@ namespace ApexCam {
   private void CheckGitHubUpdate(bool manual) {
    if(Interlocked.CompareExchange(ref githubUpdateBusy,1,0)!=0)return;
    ThreadPool.QueueUserWorkItem(_ => {
+    GitHubRelease release;
     try {
-     GitHubRelease release;using(var client=GitHubRelease.NewClient())release=GitHubRelease.Parse(client.DownloadString("https://api.github.com/repos/"+GitHubRelease.Repository+"/releases/latest"));
-     var current=typeof(MainForm).Assembly.GetName().Version;
-     bool available=release!=null && release.Version>new Version(current.Major,current.Minor,current.Build) && release.Assets.Exists(a=>a.Name=="LensioStudio.exe");
-     SafeBeginInvoke(() => {
-      if(!available){if(manual)MessageBox.Show(this,"You are using the latest LensioStudio release.","Updates",MessageBoxButtons.OK,MessageBoxIcon.Information);return;}
-      if(!manual){trayIcon.ShowBalloonTip(6000,"Lensio update available","Version "+release.Version+" is ready. Use Check for app updates in the tray menu.",ToolTipIcon.Info);return;}
-      if(MessageBox.Show(this,"Install LensioStudio "+release.Version+" from GitHub?\n\nThe app will save your workspace and restart. Phone updates still require Android confirmation.","Lensio update",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes)DownloadGitHubUpdate(release);
-     });
-    } catch(Exception error){if(manual)SafeBeginInvoke(()=>MessageBox.Show(this,"Unable to check GitHub: "+error.Message,"Updates",MessageBoxButtons.OK,MessageBoxIcon.Warning));}
-    finally{Interlocked.Exchange(ref githubUpdateBusy,0);}
+     using(var client=GitHubRelease.NewClient())release=GitHubRelease.Parse(client.DownloadString("https://api.github.com/repos/"+GitHubRelease.Repository+"/releases/latest"));
+    } catch(Exception error){
+     if(manual)SafeBeginInvoke(()=>MessageBox.Show(this,"Unable to check GitHub: "+error.Message,"Updates",MessageBoxButtons.OK,MessageBoxIcon.Warning));
+     return;
+    } finally{Interlocked.Exchange(ref githubUpdateBusy,0);}
+    var current=typeof(MainForm).Assembly.GetName().Version;
+    bool available=release!=null && release.Version>new Version(current.Major,current.Minor,current.Build) && release.Assets.Exists(a=>a.Name=="LensioStudio.exe");
+    SafeBeginInvoke(() => {
+     if(!available){if(manual)MessageBox.Show(this,"You are using the latest LensioStudio release.","Updates",MessageBoxButtons.OK,MessageBoxIcon.Information);return;}
+     if(MessageBox.Show(this,"LensioStudio "+release.Version+" is available. Install the update now?\n\nYour workspace will be saved and the app will restart. Choose No to update later.","Lensio update",MessageBoxButtons.YesNo,MessageBoxIcon.Information)==DialogResult.Yes)DownloadGitHubUpdate(release);
+    });
    });
   }
   private void DownloadGitHubUpdate(GitHubRelease release) {

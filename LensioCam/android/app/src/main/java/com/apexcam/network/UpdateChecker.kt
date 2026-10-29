@@ -54,10 +54,10 @@ object UpdateChecker {
             !digest.matches(Regex("sha256:[0-9a-fA-F]{64}")) || size !in 1..200*1024*1024L) return null
         return VersionInfo(BuildConfig.VERSION_CODE+1,version,size,url,release.get("body")?.asString ?: "",digest.removePrefix("sha256:"))
     }
-    suspend fun checkUpdate(pcIp: String): VersionInfo? = withContext(Dispatchers.IO) {
+    suspend fun checkUpdate(pcIp: String, forceGitHub: Boolean = false): VersionInfo? = withContext(Dispatchers.IO) {
         try {
             val now=android.os.SystemClock.elapsedRealtime()
-            if (lastGitHubCheck==0L || now-lastGitHubCheck>=15*60*1000L) {
+            if (forceGitHub || lastGitHubCheck==0L || now-lastGitHubCheck>=15*60*1000L) {
             lastGitHubCheck=now
             val request=Request.Builder().url("https://api.github.com/repos/$REPOSITORY/releases/latest").header("User-Agent","LensioCam").build()
             client.newCall(request).execute().use { response ->

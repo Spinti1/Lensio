@@ -19,6 +19,8 @@ $tag=Invoke-RestMethod "https://api.github.com/repos/$repository/git/ref/tags/v$
 $payload=@{tag_name="v$Version";name="Lensio $Version";body=(Get-Content -LiteralPath $NotesPath -Raw);draft=$true;prerelease=$false} | ConvertTo-Json
 $release=Invoke-RestMethod "https://api.github.com/repos/$repository/releases" -Method Post -Headers $headers -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($payload))
 $upload=$release.upload_url.Split('{')[0]
+$notices=Join-Path $PSScriptRoot '..\docs\THIRD_PARTY_NOTICES.txt'
+$null=Invoke-RestMethod ($upload+'?name=THIRD_PARTY_NOTICES.txt') -Method Post -Headers $headers -ContentType 'text/plain' -InFile $notices
 $checksums=@()
 foreach($name in @('LensioStudio.exe','LensioCam.apk')) {
  $path=$files[$name];$hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()

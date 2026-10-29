@@ -158,7 +158,10 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         }
     }
 
-    fun triggerUpdateCheck(pcIp: String) {
+    private var updateCheckJob: kotlinx.coroutines.Job? = null
+
+    fun triggerUpdateCheck(pcIp: String, forceGitHub: Boolean = false) {
+        if (updateCheckJob?.isActive == true) return
         val now = System.currentTimeMillis()
         if (now - lastUpdateCheckTime < 10000) return // Check at most every 10 seconds
         lastUpdateCheckTime = now
@@ -166,8 +169,8 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         val host = pcIp.removePrefix("ws://").removePrefix("http://").substringBefore(":")
 
 
-        lifecycleScope.launch {
-            val info = UpdateChecker.checkUpdate(host)
+        updateCheckJob = lifecycleScope.launch {
+            val info = UpdateChecker.checkUpdate(host, forceGitHub)
             if (info != null) {
                 availableUpdate.value = info
             }
@@ -286,7 +289,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         nativeSender.connect(host, port, force = true)
         triggerUpdateCheck(host)
     }
-    fun checkUpdateNow() { lastUpdateCheckTime = 0L; triggerUpdateCheck(currentServerUrl) }
+    fun checkUpdateNow() { lastUpdateCheckTime = 0L; triggerUpdateCheck(currentServerUrl, forceGitHub = true) }
     fun installAvailableUpdate() { startUpdateDownload(currentServerUrl) }
     fun startPcAudio(targetHost: String) {
         if (audioReceiverEngine == null) {

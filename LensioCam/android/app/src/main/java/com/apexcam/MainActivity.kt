@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             streamService = (binder as ApexCamService.LocalBinder).service
+            streamService?.checkUpdateNow()
         }
         override fun onServiceDisconnected(name: ComponentName?) { streamService = null }
     }

@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 function FileHash([string]$path){$s=[IO.File]::OpenRead($path);$sha=[Security.Cryptography.SHA256]::Create();try{return [BitConverter]::ToString($sha.ComputeHash($s)).Replace("-","")}finally{$sha.Dispose();$s.Dispose()}}
-$directory=Join-Path $PSScriptRoot '..\apexcam_pc\vendor\WebView2'
+$directory=Join-Path $PSScriptRoot '..\LensioStudio\vendor\WebView2'
 $files=@{
  'Microsoft.Web.WebView2.Core.dll'='2B999D1775004E98B32F281F4518F3952DF650970748527EF5B54FA9979D6C9C'
  'Microsoft.Web.WebView2.WinForms.dll'='BBC50575B6A191FD433DF854227921937F256E91A81B47C697D95EA8ED027FF6'

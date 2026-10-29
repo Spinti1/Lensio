@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -18,8 +18,8 @@ namespace ApexCam
         private volatile bool isRunning = false;
         private readonly int port;
         private readonly string apkPath;
-        private const int CurrentVersionCode = 26;
-        private const string CurrentVersionName = "2.8.0";
+        private const int CurrentVersionCode = 27;
+        private const string CurrentVersionName = "2.9.1";
 
         public Action OnTriggerUpdateRequested;
         public Action<string> OnPhonePing;

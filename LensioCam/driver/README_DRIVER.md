@@ -9,7 +9,7 @@ Windows exposes one LensioCam device per architecture. The installer removes the
 The installer validates both 64-bit and 32-bit module paths and returns a nonzero exit code on failure. For diagnostics:
 
 ```powershell
-.\apexcam\driver\register_vcam.ps1 -Action status
+.\LensioCam\driver\register_vcam.ps1 -Action status
 ```
 
 `tests/DirectShowCaptureSmoke.cs` checks the actual Windows device name, rejects duplicate aliases, starts capture and verifies receipt of a video sample. Run separate x64 and x86 builds to check both driver registrations.

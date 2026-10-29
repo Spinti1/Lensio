@@ -29,7 +29,7 @@ class WebCameraBridgeSmoke {
                     Check(wc.ResponseHeaders["Content-Security-Policy"].Contains("wss://lensio-connect.pex-am.workers.dev"),"Discovery blocked by receiver CSP");
                     Check(wc.DownloadString(root+"/app.js").Contains("RTCPeerConnection"),"Embedded JS missing");
                     Check(wc.DownloadString(root+"/auto-connect.js").Contains("class AutoConnect"),"Discovery client missing");
-                    Check(wc.DownloadString(root+"/app.js?v=20261029-4").Contains("loadDiscovery"),"Versioned JS cannot load");
+                    Check(wc.DownloadString(root+"/app.js?v=20261029-4").Contains("RTCPeerConnection"),"Versioned JS cannot load");
                     Check(wc.DownloadString(root+"/auto-connect.js?v=20261029-4").Contains("class AutoConnect"),"Versioned discovery module cannot load");
                     Check(wc.DownloadString(root+"/config.json").Contains("https://lensio-connect.pex-am.workers.dev"),"Discovery endpoint missing");
                     Check(wc.DownloadString(root+"/config.json?v=20261029-4").Contains("https://lensio-connect.pex-am.workers.dev"),"Versioned configuration missing");

@@ -473,15 +473,15 @@ namespace ApexCam
                 }
                 if (!File.Exists(scriptPath))
                 {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"apexcam\driver\register_vcam.ps1");
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"LensioCam\driver\register_vcam.ps1");
                 }
                 if (!File.Exists(scriptPath))
                 {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"ApexCam\apexcam\driver\register_vcam.ps1");
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"ApexCam\LensioCam\driver\register_vcam.ps1");
                 }
                 if (!File.Exists(scriptPath))
                 {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\apexcam\driver\register_vcam.ps1");
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\LensioCam\driver\register_vcam.ps1");
                 }
 
                 if (File.Exists(scriptPath))

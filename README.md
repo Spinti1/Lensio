@@ -12,7 +12,7 @@ LensioCam turns Android phones into wireless webcams. LensioStudio brings them t
 
 ## Android / iPhone web preview
 
-Use the [Windows QR-preview build](https://github.com/Spinti1/Lensio/releases/tag/v2.9.0-web.6). LensioStudio shows a QR code inside its Camera and Audio panel. Scan that same QR with one or several Android phones or iPhones and press **Start camera & connect**. Each phone appears automatically as its own source. No PC browser window, Add phone button, copied pairing links or return codes are required.
+Use the [latest stable release](https://github.com/Spinti1/Lensio/releases/latest). LensioStudio shows a QR code inside its Camera and Audio panel. Scan that same QR with one or several Android phones or iPhones and press **Start camera & connect**. Each phone appears automatically as its own source. No PC browser window, Add phone button, copied pairing links or return codes are required.
 
 On a small window, select **Scan QR** in the panel header; click the QR to enlarge it. The website runs only on the phones, with just a camera preview, Start camera & connect, and Stop. Keep the phones on the same Wi-Fi, with their camera page visible and screen on. Android's native LensioCam app still connects automatically over Wi-Fi or USB (ADB). Web-camera video is received by an internal Microsoft WebView2 engine; Windows 10/11 with the Evergreen WebView2 Runtime is required. The normal four-camera limit applies across native and web phones together.
 
@@ -29,9 +29,11 @@ Windows 10/11 x64 and Android 8+ are required. Actual resolution and frame rate 
 
 ## Updates
 
-LensioStudio checks GitHub on startup. To install an available update, use the tray menu → **Check for app updates**. Downloads are verified, the workspace is saved and the app restarts. Keep the app in a user-writable folder.
+LensioStudio checks GitHub on startup and offers to install a newer stable version. You can also check from the tray menu → **Check for app updates**. Downloads are verified, the workspace is saved and the app restarts. Keep the app in a user-writable folder.
 
-LensioCam checks GitHub and can fall back to the local PC update server. Android asks before installing an APK and enforces matching package signatures. Install the first GitHub-enabled APK manually to enable this update path.
+LensioCam checks GitHub when opened, including when its camera service is already running, and can fall back to the local PC update server. Android asks before installing an APK and enforces matching package signatures. Install the first GitHub-enabled APK manually to enable this update path.
+
+Preview releases are intentionally excluded from automatic updates. No USB installation script is needed: `scripts/Install-Android-Usb.bat` is an optional development helper for the first installation through ADB. Users can install the APK directly on their phone; subsequent updates are offered inside the app.
 
 ## Privacy
 
@@ -41,14 +43,14 @@ This repository contains a clean source snapshot, without private Git history, d
 
 ## Build
 
-**Windows:** run `apexcam_pc\build.bat`. This uses the Windows .NET Framework compiler and writes `LensioStudio.exe` next to the source folder.
+**Windows:** run `LensioStudio\build.bat`. This uses the Windows .NET Framework compiler and writes `LensioStudio.exe` next to the source folder.
 
-**Android:** install JDK 21 and Android SDK 34, set `JAVA_HOME` and `ANDROID_HOME`, then run `apexcam\build_android.bat`. The APK uses your local Android debug signing key for compatibility with the current development release. Keep that key private and preserve it for future updates. A different key requires uninstalling the previous app.
+**Android:** install JDK 21 and Android SDK 34, set `JAVA_HOME` and `ANDROID_HOME`, then run `LensioCam\build_android.bat`. The APK uses your local Android debug signing key for compatibility with the current development release. Keep that key private and preserve it for future updates. A different key requires uninstalling the previous app.
 
 The public CI builds and tests both platforms; its APK is only a build artifact, not a signed update for installed releases. See [release publishing](docs/RELEASING.md).
 
 ## Development
 
-The maintained clients are `apexcam_pc/` (C# / WinForms), `apexcam/android/` (Kotlin / CameraX), and `web/` (buildless Safari/WebRTC client). `tests/` contains desktop composition, persistence, layout, DirectShow, web bridge, pairing-protocol and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
+The maintained clients are `LensioStudio/` (C# / WinForms), `LensioCam/android/` (Kotlin / CameraX), and `web/` (buildless Safari/WebRTC client). `tests/` contains desktop composition, persistence, layout, DirectShow, web bridge, pairing-protocol and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
 
 The DirectShow bridge uses the OBS virtual-camera interface. OBS Studio and other dependencies retain their respective licenses. No OBS driver DLLs are bundled in this source repository.

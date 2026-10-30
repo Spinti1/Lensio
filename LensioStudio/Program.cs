@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("2.9.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("2.9.2.0")]
+[assembly: System.Reflection.AssemblyVersion("2.9.3.0")]
+[assembly: System.Reflection.AssemblyFileVersion("2.9.3.0")]
 [assembly: System.Reflection.AssemblyTitle("LensioStudio")]
 [assembly: System.Reflection.AssemblyProduct("LensioStudio")]
 [assembly: System.Reflection.AssemblyDescription("LensioStudio virtual camera and audio studio")]
@@ -23,9 +23,16 @@ namespace ApexCam
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         private const int SW_RESTORE = 9;
 
+        [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern bool SetDllDirectory(string path);
+        [DllImport("kernel32.dll")]private static extern bool SetDefaultDllDirectories(uint flags);
+
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            SetDllDirectory("");
+            SetDefaultDllDirectories(0x800|0x400); // System32 and explicitly added directories; never the current directory/PATH.
+            // Do not load optional runtimes or start camera/network workers in the elevated helper.
+            if(args.Length!=0){Environment.Exit(args.Length==1&&args[0]=="--install-virtual-camera"?BundledSetup.InstallCameraElevated():87);return;}
             try { WebReceiverRuntime.Initialize(); } catch { /* Native Android reception remains available if the optional web engine cannot start. */ }
             bool isFirstInstance;
             using (Mutex mutex = new Mutex(true, "Local\\ApexPhoneSharePC_App_Singleton_Mutex_v2", out isFirstInstance))

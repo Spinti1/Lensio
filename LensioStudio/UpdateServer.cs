@@ -16,12 +16,12 @@ namespace ApexCam
 
         private TcpListener listener;
         private volatile bool isRunning = false;
+        private int activeClients;
         private readonly int port;
         private readonly string apkPath;
-        private const int CurrentVersionCode = 28;
-        private const string CurrentVersionName = "2.9.2";
+        private const int CurrentVersionCode = 29;
+        private const string CurrentVersionName = "2.9.3";
 
-        public Action OnTriggerUpdateRequested;
         public Action<string> OnPhonePing;
 
         public int Port { get { return port; } }
@@ -68,7 +68,8 @@ namespace ApexCam
                 try
                 {
                     TcpClient client = listener.AcceptTcpClient();
-                    ThreadPool.QueueUserWorkItem(state => ProcessClient((TcpClient)state), client);
+                    if(Interlocked.Increment(ref activeClients)>8){Interlocked.Decrement(ref activeClients);client.Close();continue;}
+                    ThreadPool.QueueUserWorkItem(state => {try{ProcessClient((TcpClient)state);}finally{Interlocked.Decrement(ref activeClients);}}, client);
                 }
                 catch
                 {
@@ -77,6 +78,11 @@ namespace ApexCam
             }
         }
 
+        private static string ReadBoundedLine(TextReader reader){
+            var result=new StringBuilder();int value;
+            while((value=reader.Read())!=-1){if(value=='\n')return result.ToString().TrimEnd('\r');if(result.Length>=4096)throw new InvalidDataException("HTTP line too long");result.Append((char)value);}
+            return result.Length==0?null:result.ToString();
+        }
         private void ProcessClient(TcpClient client)
         {
             using (client)
@@ -108,7 +114,7 @@ namespace ApexCam
                     using (NetworkStream stream = client.GetStream())
                     using (StreamReader reader = new StreamReader(stream, Encoding.ASCII, false, 1024, true))
                     {
-                        string requestLine = reader.ReadLine();
+                        string requestLine = ReadBoundedLine(reader);
                         if (string.IsNullOrEmpty(requestLine)) return;
 
                         string[] parts = requestLine.Split(' ');
@@ -118,10 +124,10 @@ namespace ApexCam
                         string rawPath = parts[1].Split('?')[0];
 
                         // Read until empty line (end of HTTP headers)
-                        string line;
-                        while (!string.IsNullOrEmpty(line = reader.ReadLine()))
+                        string line;int headerBytes=0;
+                        while (!string.IsNullOrEmpty(line = ReadBoundedLine(reader)))
                         {
-                            // Drain remaining headers
+                            headerBytes+=line.Length;if(headerBytes>32768)throw new InvalidDataException("HTTP headers too large");
                         }
 
                         if (method != "GET" && method != "HEAD")
@@ -133,11 +139,7 @@ namespace ApexCam
                         if (rawPath.Equals("/api/trigger-update", StringComparison.OrdinalIgnoreCase) ||
                             rawPath.Equals("/trigger-update", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (OnTriggerUpdateRequested != null)
-                            {
-                                try { OnTriggerUpdateRequested(); } catch { }
-                            }
-                            SendSimpleResponse(stream, 200, "OK", "application/json; charset=utf-8", "{\"success\":true,\"message\":\"Update triggered on phone\"}");
+                            SendSimpleResponse(stream,404,"Not Found","text/plain","Not found");
                         }
                         else if (rawPath.Equals("/api/version", StringComparison.OrdinalIgnoreCase) ||
                             rawPath.Equals("/version", StringComparison.OrdinalIgnoreCase))
@@ -173,7 +175,7 @@ namespace ApexCam
             if (File.Exists(branded)) return branded;
             string parentBranded = Path.Combine(baseDir, "..", "LensioCam.apk");
             if (File.Exists(parentBranded)) return parentBranded;
-            string localBuild = Path.Combine(baseDir, "apexcam", "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
+            string localBuild = Path.Combine(baseDir, "LensioCam", "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
             if (File.Exists(localBuild)) return localBuild;
             string legacyLocal = Path.Combine(baseDir, "ApexPhoneShare.apk");
             if (File.Exists(legacyLocal)) return legacyLocal;

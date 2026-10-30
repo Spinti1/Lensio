@@ -288,6 +288,7 @@ namespace ApexCam
             this.Visible = true;
             this.BringToFront();
             this.Activate();
+            SafeBeginInvoke(CheckVirtualCameraSetup);
 
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
             {
@@ -1729,10 +1730,6 @@ namespace ApexCam
                             }
                         });
                     };
-                    updateServer.OnTriggerUpdateRequested = () =>
-                    {
-                        SafeBeginInvoke(() => TriggerPhoneUpdate());
-                    };
                     updateServer.Start();
                 }
                 catch { }
@@ -2061,6 +2058,7 @@ namespace ApexCam
 
         private void OnToggleVcam(object sender, EventArgs e)
         {
+            if(!isVirtualCamActive && !BundledSetup.IsCameraInstalled() && !BundledSetup.RequestCameraInstall(this))return;
             isVirtualCamActive = !isVirtualCamActive;
             if (btnQuickVcam != null)
             {
@@ -2401,6 +2399,7 @@ namespace ApexCam
             itemOpen.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
             trayMenu.Items.Add(itemOpen);
 
+            trayMenu.Items.Add("Install / repair virtual camera", null, (s,e) => BundledSetup.RequestCameraInstall(this));
             trayMenu.Items.Add("Check for app updates", null, (s,e) => CheckGitHubUpdate(true));
             trayMenu.Items.Add("Check for phone update", null, (s,e) => TriggerPhoneUpdate());
             var cameraItem = new ToolStripMenuItem("Virtual camera", null, OnToggleVcam);

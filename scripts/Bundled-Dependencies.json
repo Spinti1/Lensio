@@ -1,0 +1,54 @@
+{
+  "obsVersion": "32.1.0",
+  "obsUrl": "https://github.com/obsproject/obs-studio/releases/download/32.1.0/OBS-Studio-32.1.0-Windows-x64.zip",
+  "obsSha256": "7c742f250dc1355ca4a7ccfbcd07a1b63f53ea46f4e052bce2426d8d324ee90d",
+  "usbUrl": "https://dl.google.com/android/repository/platform-tools_r36.0.2-win.zip",
+  "usbSha256": "b024d4f319d6ad3004de1ba7b96a5c7c5f3512e8b14126308d598b4ab93dcead",
+  "webViewUrl": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/9f5cc069-77d5-48b7-89c0-1abe2e0398b5/MicrosoftEdgeWebview2Setup.exe",
+  "files": [
+    {
+      "group": "VirtualCamera",
+      "name": "obs-virtualcam-module32.dll",
+      "sha256": "a944ddc78bccfaa654e35ac8199522cbd080f510d368f76991e4e51ca6626f1a",
+      "size": 193296
+    },
+    {
+      "group": "VirtualCamera",
+      "name": "obs-virtualcam-module64.dll",
+      "sha256": "62abed1879ff1d6db219c12950dbd439270b3973c8f70a37af67fed23fb775ef",
+      "size": 237328
+    },
+    {
+      "group": "VirtualCamera",
+      "name": "placeholder.png",
+      "sha256": "1e61418a7f2a8326ab9e67b6d8445caf85532a2e4bf40a79e7f11913afadde79",
+      "size": 314050
+    },
+    {
+      "group": "Usb",
+      "name": "adb.exe",
+      "sha256": "56656270da132f44e9cb4fb86a12ba965635c80423d43dcdd944d9fec4ab4622",
+      "size": 7741592
+    },
+    {
+      "group": "Usb",
+      "name": "AdbWinApi.dll",
+      "sha256": "a00cf631dd12c82561ffccefdb1a99a27c527253b04f06ca8fc1bb86ba2148c4",
+      "size": 108184
+    },
+    {
+      "group": "Usb",
+      "name": "AdbWinUsbApi.dll",
+      "sha256": "e4d72d5ba3bf4b027f1b7a3781aae0b04712c1a52244bea277fb57dd75a85702",
+      "size": 73368
+    },
+    {
+      "group": "WebView2",
+      "name": "MicrosoftEdgeWebview2Setup.exe",
+      "sha256": "13f6d9cdc8c3e7186e4b180db7f48e199ee97d631480e8391fb3106f338fb21a",
+      "size": 1889488
+    }
+  ],
+  "obsSourceUrl": "https://github.com/obsproject/obs-studio/archive/refs/tags/32.1.0.tar.gz",
+  "obsSourceSha256": "40d1d5cee743929ecb19f400c69f0c796ba59a01b65f0785d1545b970f2d6b2f"
+}

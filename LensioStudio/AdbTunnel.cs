@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Collections.Generic;
@@ -11,6 +11,7 @@ namespace ApexCam
     {
         public static string GetAdbPath()
         {
+            try { return BundledSetup.GetAdbPath(); } catch { /* Preserve an existing SDK installation if extraction is unavailable. */ }
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string localAdb = Path.Combine(baseDir, "adb.exe");
             if (File.Exists(localAdb)) return localAdb;

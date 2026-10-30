@@ -23,9 +23,9 @@ The phone remembers the paired PC after a successful connection. Opening the nor
 1. Download **LensioStudio.exe** and **LensioCam.apk** from [Releases](https://github.com/Spinti1/Lensio/releases/latest). Keep both files together on your PC.
 2. Install the APK on your Android phone, grant camera/microphone permissions and open LensioCam.
 3. Open LensioStudio on Windows. Use the same Wi-Fi network, or enable USB debugging for ADB.
-4. Install OBS Studio's virtual camera module if needed, then run `register_virtual_cam.bat` from the source checkout as administrator. Select **LensioCam** in your video app.
+4. On first launch, accept LensioStudio's virtual-camera setup and the Windows administrator prompt. No OBS installation or external scripts are needed. Select **LensioCam** in your video app.
 
-Windows 10/11 x64 and Android 8+ are required. Actual resolution and frame rate depend on the phone, camera driver, lighting and connection. Screen-off capture can be affected by vendor power management.
+Windows 10/11 x64 and Android 8+ are required. The single Windows EXE embeds the 32/64-bit virtual camera, ADB USB tools and a signed Microsoft WebView2 bootstrapper. If WebView2 is missing, LensioStudio offers a per-user installation; this step needs internet access. USB still requires the phone owner to enable and authorize USB debugging, and some phones need their manufacturer's USB driver. Actual resolution and frame rate depend on the phone, camera driver, lighting and connection. Screen-off capture can be affected by vendor power management.
 
 ## Updates
 
@@ -51,6 +51,6 @@ The public CI builds and tests both platforms; its APK is only a build artifact,
 
 ## Development
 
-The maintained clients are `LensioStudio/` (C# / WinForms), `LensioCam/android/` (Kotlin / CameraX), and `web/` (buildless Safari/WebRTC client). `tests/` contains desktop composition, persistence, layout, DirectShow, web bridge, pairing-protocol and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
+The maintained clients are `LensioStudio/` (C# / WinForms), `LensioCam/android/` (Kotlin / CameraX), and `web/` (buildless Safari/WebRTC client). `scripts/Prepare-BundledDependencies.ps1` verifies dependency archive/component hashes and OBS/Microsoft signatures before embedding compressed components. `tests/` contains desktop composition, persistence, layout, DirectShow, web bridge, pairing-protocol and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
 
-The DirectShow bridge uses the OBS virtual-camera interface. OBS Studio and other dependencies retain their respective licenses. No OBS driver DLLs are bundled in this source repository.
+The DirectShow bridge uses the OBS virtual-camera interface. OBS Studio and other dependencies retain their respective licenses. The official OBS 32.1.0 camera modules are embedded in release EXEs; source checkouts fetch pinned official dependencies when building. Matching OBS source and license files accompany each release. See [dependency provenance](docs/BUNDLED_DEPENDENCIES.md).

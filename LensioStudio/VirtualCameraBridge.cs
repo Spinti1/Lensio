@@ -427,83 +427,8 @@ namespace ApexCam
             }
         }
 
-        public static bool CheckVirtualCameraInstalled()
-        {
-            try
-            {
-                using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes\CLSID\{860BB310-5D01-11d0-BD3B-00A0C911CE86}\Instance"))
-                {
-                    if (key != null)
-                    {
-                        foreach (string subkeyName in key.GetSubKeyNames())
-                        {
-                            using (RegistryKey sub = key.OpenSubKey(subkeyName))
-                            {
-                                if (sub != null)
-                                {
-                                    object name = sub.GetValue("FriendlyName");
-                                    if (name != null && (name.ToString().Contains("LensioCam") || name.ToString().Contains("LensioStudio") || name.ToString().Contains("ApexCam") || name.ToString().Contains("OBS Virtual Camera")))
-                                    {
-                                        string clsid = sub.GetValue("CLSID") as string;
-                                        if (string.IsNullOrEmpty(clsid)) continue;
-                                        using (RegistryKey module = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + clsid + @"\InprocServer32"))
-                                        {
-                                            string path = module == null ? null : module.GetValue(null) as string;
-                                            if (!string.IsNullOrEmpty(path) && File.Exists(path)) return true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch { }
-            return false;
-        }
-
-        public static bool InstallVirtualCamDriver()
-        {
-            try
-            {
-                string scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"driver\register_vcam.ps1");
-                if (!File.Exists(scriptPath))
-                {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"register_vcam.ps1");
-                }
-                if (!File.Exists(scriptPath))
-                {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"LensioCam\driver\register_vcam.ps1");
-                }
-                if (!File.Exists(scriptPath))
-                {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"ApexCam\LensioCam\driver\register_vcam.ps1");
-                }
-                if (!File.Exists(scriptPath))
-                {
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\LensioCam\driver\register_vcam.ps1");
-                }
-
-                if (File.Exists(scriptPath))
-                {
-                    ProcessStartInfo psi = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments = string.Format("-ExecutionPolicy Bypass -File \"{0}\" -Action install", scriptPath),
-                        UseShellExecute = true,
-                        Verb = "runas"
-                    };
-                    Process p = Process.Start(psi);
-                    p.WaitForExit();
-                    return p.ExitCode == 0;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[Driver] Error instalare driver: " + ex.Message);
-            }
-            return false;
-        }
+        public static bool CheckVirtualCameraInstalled() { return BundledSetup.IsCameraInstalled(); }
+        public static bool InstallVirtualCamDriver() { return BundledSetup.RequestCameraInstall(null); }
 
         public void Dispose()
         {

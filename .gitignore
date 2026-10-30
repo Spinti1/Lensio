@@ -89,3 +89,6 @@ web-pairing.key
 workspace.json
 phone-names.txt
 *.tmp
+
+# Embedded dependencies are fetched from pinned official archives at build time.
+LensioStudio/vendor/

@@ -49,3 +49,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+Additional bundled dependencies: OBS Studio 32.1.0 virtual camera (GPL v2), Android platform-tools 36.0.2 (upstream notices), and the official Microsoft WebView2 Evergreen bootstrapper. Full notices are embedded as LensioSetup.OBS-GPL-2.0.txt and LensioSetup.AndroidNotices.txt; matching OBS source and license files accompany the release. See docs/BUNDLED_DEPENDENCIES.md in the Lensio source repository.

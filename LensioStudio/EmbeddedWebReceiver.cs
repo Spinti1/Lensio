@@ -42,6 +42,13 @@ namespace ApexCam {
             WebReceiverRuntime.Initialize();
             view=new WebView2 {Location=new Point(-4,-4),Size=new Size(2,2),TabStop=false};owner.Controls.Add(view);view.SendToBack();
             try {
+                bool missingRuntime=false;
+                try {CoreWebView2Environment.GetAvailableBrowserVersionString();}
+                catch(WebView2RuntimeNotFoundException){missingRuntime=true;}
+                if(missingRuntime){
+                    if(MessageBox.Show(owner,"Install Microsoft WebView2 to receive iPhone and web cameras? The installer needs internet access.","Lensio web camera setup",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes)throw new InvalidOperationException("WebView2 is required for web cameras. Native Android cameras remain available.");
+                    if(!await Task.Run(()=>BundledSetup.InstallWebViewRuntime()))throw new InvalidOperationException("WebView2 installation did not complete. Restart LensioStudio to retry.");
+                }
                 var options=new CoreWebView2EnvironmentOptions();
                 var environment=await CoreWebView2Environment.CreateAsync(null,profileDirectory,options);
                 if(stopped)return;

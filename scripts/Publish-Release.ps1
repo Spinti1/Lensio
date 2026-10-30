@@ -21,6 +21,16 @@ $release=Invoke-RestMethod "https://api.github.com/repos/$repository/releases" -
 $upload=$release.upload_url.Split('{')[0]
 $notices=Join-Path $PSScriptRoot '..\docs\THIRD_PARTY_NOTICES.txt'
 $null=Invoke-RestMethod ($upload+'?name=THIRD_PARTY_NOTICES.txt') -Method Post -Headers $headers -ContentType 'text/plain' -InFile $notices
+# Redistribute the matching unmodified OBS source and full notices with the embedded camera modules.
+$manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Bundled-Dependencies.json') -Raw | ConvertFrom-Json
+$source=Join-Path $PSScriptRoot '../.public-release/OBS-Studio-32.1.0-source.tar.gz'
+if(!(Test-Path -LiteralPath $source)){
+ New-Item -ItemType Directory -Force -Path (Split-Path $source) | Out-Null
+ Invoke-WebRequest -UseBasicParsing $manifest.obsSourceUrl -OutFile $source
+}
+if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.obsSourceSha256){throw 'Matching OBS source archive verification failed. Release remains a draft.'}
+$extra=@{'OBS-Studio-32.1.0-source.tar.gz'=$source;'OBS-GPL-2.0.txt'=(Join-Path $PSScriptRoot '../docs/OBS-GPL-2.0.txt');'ANDROID-PLATFORM-TOOLS-NOTICES.txt'=(Join-Path $PSScriptRoot '../docs/ANDROID-PLATFORM-TOOLS-NOTICES.txt')}
+foreach($name in $extra.Keys){$null=Invoke-RestMethod ($upload+'?name='+$name) -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $extra[$name]}
 $checksums=@()
 foreach($name in @('LensioStudio.exe','LensioCam.apk')) {
  $path=$files[$name];$hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()

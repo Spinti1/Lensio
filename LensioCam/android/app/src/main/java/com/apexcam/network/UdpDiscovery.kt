@@ -162,12 +162,16 @@ class UdpDiscovery(private val context: Context) {
             scanPool.execute {
                 try {
                     if (found.get() || !isRunning.get() || isConnectedProvider?.invoke() == true) return@execute
-                    val request = java.net.URL("http://" + ip + ":8557/api/version").openConnection() as java.net.HttpURLConnection
+                    val request = java.net.URL("http://" + ip + ":8557/api/identity").openConnection() as java.net.HttpURLConnection
                     val matches = try {
                         request.connectTimeout = 250
                         request.readTimeout = 350
-                        val body = request.inputStream.bufferedReader().use { it.readText() }
-                        body.contains("\"versionCode\"") && body.contains("\"apkUrl\"")
+                        val body = request.inputStream.bufferedReader().use { reader ->
+                            val buffer=CharArray(512);var used=0
+                            while(used<buffer.size){val count=reader.read(buffer,used,buffer.size-used);if(count<0)break;used+=count}
+                            String(buffer,0,used)
+                        }
+                        body.contains("\"application\":\"LensioStudio\"")
                     } finally { request.disconnect() }
                     if (!matches || !isRunning.get() || isConnectedProvider?.invoke() == true) return@execute
                     if (found.compareAndSet(false, true)) {

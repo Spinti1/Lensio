@@ -60,7 +60,7 @@ fun QuickSettingsSheet(
                     ) {
                         Column {
                             Text(
-                                text = if (settings.resolution.width >= 1920) "🖥️ 1080p Full HD" else "⚡ 720p HD",
+                                text = if (settings.resolution.width >= 1920) "1080p Full HD" else "720p HD",
                                 color = Color(0xFF38BDF8),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
@@ -137,9 +137,9 @@ fun QuickSettingsSheet(
                 }
             }
 
-            // Wi-Fi OTA Update Check
+            // Independent GitHub update check
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = "App Update (Wi-Fi OTA)", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                Text(text = "LensioCam updates (GitHub)", color = Color(0xFF94A3B8), fontSize = 13.sp)
                 Button(
                     onClick = {
                         onCheckUpdate()
@@ -149,7 +149,7 @@ fun QuickSettingsSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E)),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("🚀 Check for Updates from PC (Wi-Fi)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Check for updates", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
 

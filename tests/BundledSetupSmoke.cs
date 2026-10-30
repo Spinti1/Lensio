@@ -27,7 +27,7 @@ class BundledSetupSmoke {
   rejected=false;try{validate.Invoke(null,new object[]{acl});}catch(TargetInvocationException e){rejected=e.InnerException is IOException;}Check(rejected,"User-writable setup path accepted");
   acl=new DirectorySecurity();acl.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid,null));
   rejected=false;try{validate.Invoke(null,new object[]{acl});}catch(TargetInvocationException e){rejected=e.InnerException is IOException;}Check(rejected,"Untrusted setup owner accepted");
-  var line=typeof(UpdateServer).GetMethod("ReadBoundedLine",BindingFlags.Static|BindingFlags.NonPublic);
+  var line=typeof(DiscoveryIdentityServer).GetMethod("ReadBoundedLine",BindingFlags.Static|BindingFlags.NonPublic);
   rejected=false;try{line.Invoke(null,new object[]{new StringReader(new string('X',4097)+"\r\n")});}catch(TargetInvocationException e){rejected=e.InnerException is InvalidDataException;}Check(rejected,"Unbounded HTTP line accepted");
   Check((string)line.Invoke(null,new object[]{new StringReader("GET /api/version HTTP/1.1\r\n")})=="GET /api/version HTTP/1.1","Normal HTTP line rejected");
   string adb=BundledSetup.GetAdbPath();

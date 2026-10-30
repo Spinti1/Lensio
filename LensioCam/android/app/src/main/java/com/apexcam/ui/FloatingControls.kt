@@ -102,7 +102,7 @@ fun FloatingControls(
                                 .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "🔊 PC Audio",
+                                text = "PC Audio",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -120,7 +120,7 @@ fun FloatingControls(
                                 .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "🎙️ Microphone",
+                                text = "Microphone",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -169,17 +169,17 @@ fun FloatingControls(
             verticalAlignment = Alignment.CenterVertically
         ) {
             LensPillButton(
-                title = "🌐 0.5x",
+                title = "0.5x",
                 isSelected = currentLens == CameraLensType.BACK_ULTRAWIDE,
                 onClick = { onSelectLens(CameraLensType.BACK_ULTRAWIDE) }
             )
             LensPillButton(
-                title = "📷 1x",
+                title = "1x",
                 isSelected = currentLens == CameraLensType.BACK_MAIN,
                 onClick = { onSelectLens(CameraLensType.BACK_MAIN) }
             )
             LensPillButton(
-                title = "🤳 Selfie",
+                title = "Selfie",
                 isSelected = currentLens == CameraLensType.FRONT_SELFIE,
                 onClick = { onSelectLens(CameraLensType.FRONT_SELFIE) }
             )

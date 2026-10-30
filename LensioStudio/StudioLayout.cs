@@ -268,7 +268,7 @@ namespace ApexCam
             int w = topBarPanel.ClientSize.Width;
             topBarPanel.Height = 64;
             lblBrand.SetBounds(10,7,130,24);
-            btnTopUpdate.SetBounds(Math.Max(150,w-222),5,104,26);
+            btnTopUpdate.SetBounds(Math.Max(150,w-298),5,180,26);
             btnQuickVcam.SetBounds(Math.Max(258,w-112),5,102,26);
             studioStatus.SetBounds(6,35,Math.Max(100,w-12),25);
             quickBarPanel.Visible = false;

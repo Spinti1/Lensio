@@ -46,9 +46,11 @@ class StudioLayoutSmoke {
             foreach(ToolStripItem item in tray.Items) {
                 if(item.Text.Trim()=="Open LensioStudio")open=true;
                 if(item.Text.Trim()=="Exit LensioStudio")exit=true;
-                if(item.Text=="Check for phone update")update=true;
+                if(item.Text=="Check for app updates")update=true;
+                Check(item.Text!="Check for phone update","Legacy phone updater remains in tray");
             }
             Check(open && exit && update,"English tray actions missing");
+            Check(((Button)Field(form,"btnTopUpdate")).Text=="Check for updates","Header does not check desktop updates");
             CaptureMenu(tray,"tray");
             var status=(StatusStrip)Field(form,"studioStatus");
             foreach(ToolStripItem item in ((ToolStripDropDownItem)status.Items[0]).DropDownItems)Check(!item.Text.Contains("Add phone"),"Add phone menu remains");

@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("2.9.3.0")]
-[assembly: System.Reflection.AssemblyFileVersion("2.9.3.0")]
+[assembly: System.Reflection.AssemblyVersion("2.9.4.0")]
+[assembly: System.Reflection.AssemblyFileVersion("2.9.4.0")]
 [assembly: System.Reflection.AssemblyTitle("LensioStudio")]
 [assembly: System.Reflection.AssemblyProduct("LensioStudio")]
 [assembly: System.Reflection.AssemblyDescription("LensioStudio virtual camera and audio studio")]
@@ -32,7 +32,14 @@ namespace ApexCam
             SetDllDirectory("");
             SetDefaultDllDirectories(0x800|0x400); // System32 and explicitly added directories; never the current directory/PATH.
             // Do not load optional runtimes or start camera/network workers in the elevated helper.
-            if(args.Length!=0){Environment.Exit(args.Length==1&&args[0]=="--install-virtual-camera"?BundledSetup.InstallCameraElevated():87);return;}
+            if(args.Length!=0){
+                int parent;
+                if(args.Length==4 && args[0]=="--setup" && int.TryParse(args[2],out parent)){
+                    try{UpdateSetup.Run(args[1],parent,args[3]);}catch(Exception error){MessageBox.Show("Unable to open Setup: "+error.Message,"LensioStudio Setup");}
+                    return;
+                }
+                Environment.Exit(args.Length==1&&args[0]=="--install-virtual-camera"?BundledSetup.InstallCameraElevated():87);return;
+            }
             try { WebReceiverRuntime.Initialize(); } catch { /* Native Android reception remains available if the optional web engine cannot start. */ }
             bool isFirstInstance;
             using (Mutex mutex = new Mutex(true, "Local\\ApexPhoneSharePC_App_Singleton_Mutex_v2", out isFirstInstance))

@@ -3,25 +3,21 @@ package com.apexcam.network
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.apexcam.BuildConfig
-import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
 data class VersionInfo(
-    val versionCode: Int = 1,
     val versionName: String = "1.0.0",
     val apkSize: Long = 0,
-    val apkUrl: String = "/download/LensioCam.apk",
+    val apkUrl: String = "",
     val releaseNotes: String = "",
     val sha256: String = ""
 )
@@ -30,7 +26,8 @@ object UpdateChecker {
     private const val TAG = "UpdateChecker"
     private val client = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .followSslRedirects(false)
         .build()
 
     private const val REPOSITORY = "Spinti1/Lensio"
@@ -41,7 +38,7 @@ object UpdateChecker {
         if (release.get("draft")?.asBoolean == true || release.get("prerelease")?.asBoolean == true) return null
         val version = release.get("tag_name").asString.removePrefix("v")
         val parts = version.split('.').map { it.toIntOrNull() ?: return null }
-        if (parts.size != 3) return null
+        if (parts.size != 3 || parts.any { it < 0 } || !version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) return null
         val current = BuildConfig.VERSION_NAME.split('.').map { it.toIntOrNull() ?: 0 }
         var newer = false
         for (i in 0..2) { val compare = parts[i].compareTo(current.getOrElse(i) {0}); if (compare != 0) { newer=compare>0; break } }
@@ -50,55 +47,40 @@ object UpdateChecker {
         val url=asset.get("browser_download_url").asString
         val digest=asset.get("digest")?.asString ?: return null
         val size=asset.get("size").asLong
-        if (!url.startsWith("https://github.com/$REPOSITORY/releases/download/") ||
+        if (url != "https://github.com/$REPOSITORY/releases/download/v$version/LensioCam.apk" ||
             !digest.matches(Regex("sha256:[0-9a-fA-F]{64}")) || size !in 1..200*1024*1024L) return null
-        return VersionInfo(BuildConfig.VERSION_CODE+1,version,size,url,release.get("body")?.asString ?: "",digest.removePrefix("sha256:"))
+        return VersionInfo(version,size,url,release.get("body")?.asString ?: "",digest.removePrefix("sha256:"))
     }
-    suspend fun checkUpdate(pcIp: String, forceGitHub: Boolean = false): VersionInfo? = withContext(Dispatchers.IO) {
-        try {
-            val now=android.os.SystemClock.elapsedRealtime()
-            if (forceGitHub || lastGitHubCheck==0L || now-lastGitHubCheck>=15*60*1000L) {
+    suspend fun checkUpdate(forceGitHub: Boolean = false): VersionInfo? = withContext(Dispatchers.IO) {
+        val now=android.os.SystemClock.elapsedRealtime()
+        if (!forceGitHub && lastGitHubCheck!=0L && now-lastGitHubCheck<15*60*1000L) return@withContext offeredUpdate
+        val request=Request.Builder().url("https://api.github.com/repos/$REPOSITORY/releases/latest").header("User-Agent","LensioCam").build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw java.io.IOException("GitHub update check failed (${response.code})")
+            val body=response.body ?: throw java.io.IOException("Empty GitHub response")
+            if(body.contentLength()>1024*1024)throw java.io.IOException("Release metadata is too large")
+            val json=body.charStream().use { reader ->
+                val text=StringBuilder();val buffer=CharArray(4096)
+                while(true){val count=reader.read(buffer);if(count<0)break;if(text.length+count>1024*1024)throw java.io.IOException("Release metadata is too large");text.append(buffer,0,count)}
+                text.toString()
+            }
+            offeredUpdate=parseGitHubRelease(json)
             lastGitHubCheck=now
-            val request=Request.Builder().url("https://api.github.com/repos/$REPOSITORY/releases/latest").header("User-Agent","LensioCam").build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) parseGitHubRelease(response.body?.string() ?: "")?.let { offeredUpdate=it; return@withContext it }
-            }
-            } else if (offeredUpdate?.sha256?.isNotBlank()==true) return@withContext offeredUpdate
-        } catch (_: Exception) { /* Local PC updates remain available without internet. */ }
-        if (pcIp.isBlank() || pcIp == "127.0.0.1") return@withContext null
-        val cleanHost = pcIp.removePrefix("ws://").removePrefix("http://").substringBefore(":")
-        val url = "http://$cleanHost:8557/api/version"
-
-        try {
-            val request = Request.Builder().url(url).build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val bodyString = response.body?.string() ?: return@withContext null
-                    val info = Gson().fromJson(bodyString, VersionInfo::class.java)
-                    Log.d(TAG, "Versiune primita de la PC: $info (Curenta: ${BuildConfig.VERSION_CODE})")
-                    if (info.versionCode > BuildConfig.VERSION_CODE) {
-                        offeredUpdate=info
-                        return@withContext info
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.d(TAG, "Nu s-a putut verifica versiunea de pe PC: ${e.message}")
+            offeredUpdate
         }
-        return@withContext null
     }
 
     suspend fun downloadAndInstallApk(
         context: Context,
-        pcIp: String,
         onProgress: (Float) -> Unit,
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
-        val cleanHost = pcIp.removePrefix("ws://").removePrefix("http://").substringBefore(":")
-        val offer=offeredUpdate
-        val downloadUrl = if (offer?.sha256?.isNotBlank() == true) offer.apkUrl else "http://$cleanHost:8557/download/LensioCam.apk"
-
+        val targetFile = File(context.cacheDir, "LensioCam_Update.apk")
         try {
+            val offer=offeredUpdate ?: throw java.io.IOException("Check GitHub for updates first")
+            if(!offer.apkUrl.startsWith("https://github.com/$REPOSITORY/releases/download/") ||
+                !offer.sha256.matches(Regex("[0-9a-fA-F]{64}")) || offer.apkSize !in 1..200*1024*1024L) throw java.io.IOException("Unverified update offer")
+            val downloadUrl=offer.apkUrl
             val request = Request.Builder().url(downloadUrl).build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -112,29 +94,14 @@ object UpdateChecker {
                 }
 
                 val contentLength = body.contentLength()
-                val targetFile = File(context.cacheDir, "LensioCam_Update.apk")
+                if (contentLength>=0 && contentLength!=offer.apkSize) throw java.io.IOException("Update size does not match the release")
                 if (targetFile.exists()) targetFile.delete()
 
-                val digest=java.security.MessageDigest.getInstance("SHA-256")
-                var totalRead = 0L
                 body.byteStream().use { input ->
                     FileOutputStream(targetFile).use { output ->
-                        val buffer=ByteArray(32768)
-                        while (true) {
-                            val count=input.read(buffer)
-                            if (count<0) break
-                            totalRead+=count
-                            if (totalRead>200*1024*1024L) throw java.io.IOException("Update exceeds size limit")
-                            digest.update(buffer,0,count)
-                            output.write(buffer,0,count)
-                            if (contentLength>0) withContext(Dispatchers.Main) {onProgress(totalRead.toFloat()/contentLength)}
+                        copyVerifiedApk(input,output,offer.apkSize,offer.sha256) { progress ->
+                            withContext(Dispatchers.Main) { onProgress(progress) }
                         }
-                    }
-                }
-                if (offer?.sha256?.isNotBlank() == true) {
-                    val hash=digest.digest().joinToString("") { "%02x".format(it) }
-                    if (!hash.equals(offer.sha256,true) || totalRead!=offer.apkSize) {
-                        targetFile.delete(); throw java.io.IOException("Update integrity verification failed")
                     }
                 }
                 // Android also verifies the package signature before allowing an update.
@@ -146,6 +113,8 @@ object UpdateChecker {
                 }
             }
         } catch (e: Exception) {
+            targetFile.delete()
+            if(e is kotlinx.coroutines.CancellationException)throw e
             Log.e(TAG, "Update download failed: ${e.message}", e)
             withContext(Dispatchers.Main) {
                 onError("Connection error: ${e.message}")
@@ -153,8 +122,31 @@ object UpdateChecker {
         }
     }
 
+    internal suspend fun copyVerifiedApk(
+        input: java.io.InputStream, output: java.io.OutputStream,
+        expectedSize: Long, expectedHash: String, onProgress: suspend (Float) -> Unit = {}
+    ) {
+        require(expectedSize in 1..200*1024*1024L && expectedHash.matches(Regex("[0-9a-fA-F]{64}")))
+        val digest=java.security.MessageDigest.getInstance("SHA-256")
+        val buffer=ByteArray(32768);var total=0L
+        while(true){
+            val count=input.read(buffer);if(count<0)break
+            total+=count
+            if(total>expectedSize)throw java.io.IOException("Update exceeds release size")
+            digest.update(buffer,0,count);output.write(buffer,0,count)
+            onProgress(total.toFloat()/expectedSize)
+        }
+        val hash=digest.digest().joinToString("") { "%02x".format(it) }
+        if(total!=expectedSize || !hash.equals(expectedHash,true))throw java.io.IOException("Update integrity verification failed")
+    }
+
     private fun installApk(context: Context, apkFile: File) {
         try {
+            if(android.os.Build.VERSION.SDK_INT>=26 && !context.packageManager.canRequestPackageInstalls()) {
+                context.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                android.widget.Toast.makeText(context,"Allow updates from LensioCam, then tap Install update again",android.widget.Toast.LENGTH_LONG).show()
+                return
+            }
             val uri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.provider",

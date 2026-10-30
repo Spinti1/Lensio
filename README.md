@@ -20,7 +20,7 @@ The phone remembers the paired PC after a successful connection. Opening the nor
 
 ## Get started
 
-1. Download **LensioStudio.exe** and **LensioCam.apk** from [Releases](https://github.com/Spinti1/Lensio/releases/latest). Keep both files together on your PC.
+1. Download **LensioStudio.exe** and **LensioCam.apk** from [Releases](https://github.com/Spinti1/Lensio/releases/latest). Install each file on its corresponding device; the PC does not need to keep a copy of the APK.
 2. Install the APK on your Android phone, grant camera/microphone permissions and open LensioCam.
 3. Open LensioStudio on Windows. Use the same Wi-Fi network, or enable USB debugging for ADB.
 4. On first launch, accept LensioStudio's virtual-camera setup and the Windows administrator prompt. No OBS installation or external scripts are needed. Select **LensioCam** in your video app.
@@ -29,9 +29,9 @@ Windows 10/11 x64 and Android 8+ are required. The single Windows EXE embeds the
 
 ## Updates
 
-LensioStudio checks GitHub on startup and offers to install a newer stable version. You can also check from the tray menu → **Check for app updates**. Downloads are verified, the workspace is saved and the app restarts. Keep the app in a user-writable folder.
+LensioStudio checks GitHub on startup and offers to install a newer stable version. You can also check from the tray menu → **Check for app updates**. The header button shows **Checking for updates...** while checking GitHub over HTTPS. Only the Windows EXE is downloaded. Its length and SHA-256 must match GitHub release metadata; oversized, truncated or changed downloads are rejected. The layout must save successfully before the app closes safely and opens the verified **LensioStudio Setup** with the current installation folder selected. Choose **Install and open** to replace the EXE atomically and reopen the studio. Setup rechecks the hash and runs without elevation. Keep the app in a user-writable folder. These installers are not code-signed.
 
-LensioCam checks GitHub when opened, including when its camera service is already running, and can fall back to the local PC update server. Android asks before installing an APK and enforces matching package signatures. Install the first GitHub-enabled APK manually to enable this update path.
+LensioCam checks GitHub independently when opened, including when its camera service is already running. Settings → **Check for updates** checks manually. APK downloads use HTTPS and must match the release size and SHA-256. Android asks before installing an APK, may ask you to allow updates from LensioCam, and enforces matching package signatures. The PC does not serve, download or remotely install phone updates. Android APKs retain the existing signing key; the unsigned-installer notice refers to Windows EXEs.
 
 Preview releases are intentionally excluded from automatic updates. No USB installation script is needed: `scripts/Install-Android-Usb.bat` is an optional development helper for the first installation through ADB. Users can install the APK directly on their phone; subsequent updates are offered inside the app.
 

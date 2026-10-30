@@ -83,7 +83,7 @@ namespace ApexCam
 
         private VideoReceiver receiver;
         private VirtualCameraBridge vcamBridge;
-        private UpdateServer updateServer;
+        private DiscoveryIdentityServer identityServer;
         private DiscoveryBeacon beacon;
         private MjpegReceiver mjpegReceiver;
 
@@ -429,8 +429,9 @@ namespace ApexCam
                 }
             };
 
-            btnTopUpdate = CreateModernButton("Update APK", ColorAccentCyan, 0, 12, 100, 32);
-            btnTopUpdate.Click += (s, e) => TriggerPhoneUpdate();
+            btnTopUpdate = CreateModernButton("Check for updates", ColorAccentCyan, 0, 12, 100, 32);
+            btnTopUpdate.Click += (s, e) => CheckGitHubUpdate(true);
+            sourceToolTips.SetToolTip(btnTopUpdate,"Checks GitHub over HTTPS. Downloads must match the release size and SHA-256. Setup saves your layout and updates the current installation folder. Installers are not code-signed.");
 
             btnQuickVcam = CreateModernButton("VCam: ON", ColorAccentEmerald, 0, 12, 115, 32);
             btnQuickVcam.Click += OnToggleVcam;
@@ -1719,18 +1720,8 @@ namespace ApexCam
 
                 try
                 {
-                    updateServer = new UpdateServer(8557);
-                    updateServer.OnPhonePing = (phoneIp) =>
-                    {
-                        SafeBeginInvoke(() =>
-                        {
-                            if (txtPhoneIp != null && txtPhoneIp.Text != phoneIp)
-                            {
-                                txtPhoneIp.Text = phoneIp;
-                            }
-                        });
-                    };
-                    updateServer.Start();
+                    identityServer = new DiscoveryIdentityServer(8557);
+                    identityServer.Start();
                 }
                 catch { }
 
@@ -2154,52 +2145,6 @@ namespace ApexCam
         }
 
         // ==========================================
-        // OTA PHONE UPDATE (WI-FI & ADB)
-        // ==========================================
-        private void TriggerPhoneUpdate()
-        {
-            string myIp = GetLocalIp();
-            try
-            {
-                if (receiver != null && receiver.IsConnected)
-                {
-                    SendPhoneControl("{\"triggerUpdate\":true,\"host\":\"" + myIp + "\"}");
-                }
-            }
-            catch { }
-
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    string adbExe = "adb";
-                    System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = adbExe,
-                        Arguments = "install -r \"" + Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LensioCam.apk") + "\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    using (var p = System.Diagnostics.Process.Start(psi))
-                    {
-                        if (p != null) p.WaitForExit(15000);
-                    }
-                }
-                catch { }
-            });
-
-            MessageBox.Show(
-                "The LensioCam update request was sent to your phone.\n\n" +
-                "1. If LensioCam is open on your phone, use the update card to install the update.\n\n" +
-                "2. You can also download the APK in a browser:\n" +
-                "http://" + myIp + ":8557/download/LensioCam.apk",
-                "LensioCam Update",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information
-            );
-        }
-
-        // ==========================================
         // AUDIO & MICROPHONE CONTROL
         // ==========================================
         private void TogglePcAudio()
@@ -2401,7 +2346,6 @@ namespace ApexCam
 
             trayMenu.Items.Add("Install / repair virtual camera", null, (s,e) => BundledSetup.RequestCameraInstall(this));
             trayMenu.Items.Add("Check for app updates", null, (s,e) => CheckGitHubUpdate(true));
-            trayMenu.Items.Add("Check for phone update", null, (s,e) => TriggerPhoneUpdate());
             var cameraItem = new ToolStripMenuItem("Virtual camera", null, OnToggleVcam);
             trayMenu.Items.Add(cameraItem);
             trayMenu.Opening += (s,e) => { cameraItem.Checked = isVirtualCamActive; };
@@ -2502,7 +2446,7 @@ namespace ApexCam
             Cleanup(() => { if (wasapiCapture != null) wasapiCapture.Dispose(); });
             Cleanup(() => { if (audioStreamer != null) audioStreamer.Dispose(); });
             Cleanup(() => { if (micReceiver != null) micReceiver.Dispose(); });
-            Cleanup(() => { if (updateServer != null) updateServer.Dispose(); });
+            Cleanup(() => { if (identityServer != null) identityServer.Dispose(); });
             Cleanup(() => { if (mjpegReceiver != null) mjpegReceiver.Dispose(); });
             Cleanup(() => { if (beacon != null) beacon.Dispose(); });
             Cleanup(() => { if (embeddedWebReceiver != null) embeddedWebReceiver.Dispose(); });

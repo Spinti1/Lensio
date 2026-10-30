@@ -48,7 +48,7 @@ namespace ApexCam
             return deviceId!=null && deviceId.StartsWith("legacy:") && ports.Length==1 ? ports[0] : 0;
         }
 
-        public static readonly int[] RequiredReversePorts = new int[] { 8556, 8557, 44100, 44101 };
+        public static readonly int[] RequiredReversePorts = new int[] { 8556, 44100, 44101 };
 
         public static bool SetupPortForwarding(int port = 8556)
         {

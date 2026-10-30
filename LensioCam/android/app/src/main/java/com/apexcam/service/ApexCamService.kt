@@ -146,7 +146,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
                                 currentServerUrl = "$foundIp:$foundPort"
                                 isUsbMode = false
                                 nativeSender.connect(foundIp, foundPort)
-                                triggerUpdateCheck(foundIp)
+
                             }
                         }
                     }
@@ -160,37 +160,35 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
 
     private var updateCheckJob: kotlinx.coroutines.Job? = null
 
-    fun triggerUpdateCheck(pcIp: String, forceGitHub: Boolean = false) {
+    fun checkForUpdates(force: Boolean = false, manual: Boolean = false) {
         if (updateCheckJob?.isActive == true) return
-        val now = System.currentTimeMillis()
-        if (now - lastUpdateCheckTime < 10000) return // Check at most every 10 seconds
-        lastUpdateCheckTime = now
-
-        val host = pcIp.removePrefix("ws://").removePrefix("http://").substringBefore(":")
-
-
-        updateCheckJob = lifecycleScope.launch {
-            val info = UpdateChecker.checkUpdate(host, forceGitHub)
-            if (info != null) {
-                availableUpdate.value = info
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!force && now-lastUpdateCheckTime<10000) return
+        lastUpdateCheckTime=now
+        updateCheckJob=lifecycleScope.launch {
+            try {
+                val info=UpdateChecker.checkUpdate(force)
+                availableUpdate.value=info
+                if(manual && info==null)Toast.makeText(this@ApexCamService,"LensioCam is up to date",Toast.LENGTH_SHORT).show()
+            } catch (error: Exception) {
+                if(error is kotlinx.coroutines.CancellationException)throw error
+                if(manual)Toast.makeText(this@ApexCamService,"Unable to check GitHub updates",Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    fun startUpdateDownload(pcIp: String) {
-        val host = pcIp.removePrefix("ws://").removePrefix("http://").substringBefore(":")
+    private fun startUpdateDownload() {
+        if(isDownloadingUpdate.value)return
         isDownloadingUpdate.value = true
         downloadProgress.value = 0f
         lifecycleScope.launch {
-            UpdateChecker.downloadAndInstallApk(
-                context = this@ApexCamService,
-                pcIp = host,
-                onProgress = { p -> downloadProgress.value = p },
-                onError = { err ->
-                    isDownloadingUpdate.value = false
-                    Toast.makeText(this@ApexCamService, "Update error: $err", Toast.LENGTH_LONG).show()
-                }
-            )
+            try {
+                UpdateChecker.downloadAndInstallApk(
+                    context = this@ApexCamService,
+                    onProgress = { p -> downloadProgress.value = p },
+                    onError = { err -> Toast.makeText(this@ApexCamService, "Update error: $err", Toast.LENGTH_LONG).show() }
+                )
+            } finally { isDownloadingUpdate.value = false }
         }
     }
 
@@ -234,7 +232,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
             runOnUiThread {
                 savePcIp(host)
                 currentServerUrl = "$host:8556"
-                triggerUpdateCheck(host)
+
             }
         }
 
@@ -256,7 +254,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         }
 
         currentServerUrl = "${getSavedPcIp()}:8556"
-        triggerUpdateCheck(getSavedPcIp())
+        checkForUpdates()
     }
     private fun runOnUiThread(action: () -> Unit) {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
@@ -287,10 +285,10 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         isUsbMode = host == "127.0.0.1"
         savePcIp(host)
         nativeSender.connect(host, port, force = true)
-        triggerUpdateCheck(host)
+
     }
-    fun checkUpdateNow() { lastUpdateCheckTime = 0L; triggerUpdateCheck(currentServerUrl, forceGitHub = true) }
-    fun installAvailableUpdate() { startUpdateDownload(currentServerUrl) }
+    fun checkUpdateNow() { checkForUpdates(force = true, manual = true) }
+    fun installAvailableUpdate() { startUpdateDownload() }
     fun startPcAudio(targetHost: String) {
         if (audioReceiverEngine == null) {
             audioReceiverEngine = com.apexcam.audio.AudioReceiverEngine(targetHost, 44100).apply {
@@ -332,8 +330,8 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
 
         var details = "Camera active • continues with the screen off."
         val activeParts = mutableListOf<String>()
-        if (audioReceiverEngine != null) activeParts.add("🔊 PC Audio")
-        if (micCaptureEngine != null) activeParts.add("🎙️ Microphone")
+        if (audioReceiverEngine != null) activeParts.add("PC Audio")
+        if (micCaptureEngine != null) activeParts.add("Microphone")
         if (extraStatus != null && !activeParts.contains(extraStatus)) activeParts.add(extraStatus)
 
         if (activeParts.isNotEmpty()) {
@@ -540,14 +538,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
                     ApexCamService.instance?.stopMic()
                 }
             }
-            if (control.has("triggerUpdate")) {
-                val host = if (control.has("host")) control.get("host").asString else getSavedPcIp()
-                startUpdateDownload(host)
-                Toast.makeText(this@ApexCamService, "Downloading update from PC ($host)...", Toast.LENGTH_SHORT).show()
-            } else if (control.has("check_update")) {
-                val host = if (control.has("host")) control.get("host").asString else getSavedPcIp()
-                triggerUpdateCheck(host)
-            }
+
         }
     }
 

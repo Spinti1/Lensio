@@ -67,7 +67,6 @@ namespace ApexCam
             RestorePhonePreferences(info.Id);
             if(controlledDeviceId==null || controlledDeviceId==info.Id) SelectControlledPhone(info.Id);
             RestoreAudioPreferences(info.Id);
-            SendPhoneControl(info.Id,"{\"check_update\":true,\"host\":\""+GetLocalIp()+"\"}");
             if(info.Id==mainDeviceId) {
                 if(isPcAudioStreaming)SendPhoneControl(info.Id,"{\"streamPcAudio\":true}");
                 if(isMicStreaming)SendPhoneControl(info.Id,"{\"enableMic\":true}");

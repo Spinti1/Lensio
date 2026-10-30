@@ -232,7 +232,7 @@ fun CameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "🚀 Update Available (v${availableUpdate.versionName})",
+                            text = "Update available (v${availableUpdate.versionName})",
                             color = Color(0xFF38BDF8),
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold
@@ -250,7 +250,7 @@ fun CameraScreen(
                     }
 
                     Text(
-                        text = availableUpdate.releaseNotes.ifBlank { "Full HD 1080p streaming, wireless Wi-Fi connection and an updated interface." },
+                        text = availableUpdate.releaseNotes.ifBlank { "A new LensioCam version is available on GitHub. Downloads are verified by size and SHA-256; Android will ask you to confirm installation." },
                         color = Color(0xFFCBD5E1),
                         fontSize = 11.5.sp
                     )
@@ -280,7 +280,7 @@ fun CameraScreen(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
-                            Text("📥 Install Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Install update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

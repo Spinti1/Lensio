@@ -18,6 +18,12 @@ class OverlayGeometrySmoke {
             }
             Console.WriteLine("PASS overlay geometry "+width);
         }
+        bool x,y;
+        var centered=MainForm.SnapToCanvasCenter(new RectangleF(804,454,320,180),10,out x,out y);
+        if(!x||!y||centered.X!=800||centered.Y!=450)throw new Exception("Center snap is not exact");
+        var free=new RectangleF(500,200,320,180);
+        if(MainForm.SnapToCanvasCenter(free,10,out x,out y)!=free||x||y)throw new Exception("Snap captured a distant source");
+        Console.WriteLine("PASS magnetic scene-center alignment and free movement away from guides");
         return 0;
     }
 }

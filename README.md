@@ -27,6 +27,14 @@ The phone remembers the paired PC after a successful connection. Opening the nor
 
 Windows 10/11 x64 and Android 8+ are required. The single Windows EXE embeds the 32/64-bit virtual camera, ADB USB tools and a signed Microsoft WebView2 bootstrapper. If WebView2 is missing, LensioStudio offers a per-user installation; this step needs internet access. USB still requires the phone owner to enable and authorize USB debugging, and some phones need their manufacturer's USB driver. Actual resolution and frame rate depend on the phone, camera driver, lighting and connection. Screen-off capture can be affected by vendor power management.
 
+## Rotation and source alignment
+
+The native Android camera follows the phone's physical orientation, including portrait, landscape and upside-down. Camera capture remains bound while orientation changes; the sensor is stopped when the camera service is released. The Windows camera source adjusts its aspect ratio around its current center while overlays stay on the scene canvas. Web-phone sources also follow the dimensions received from the browser.
+
+Dragging a source near either scene-center axis snaps it exactly into alignment and shows cyan guides. Hold **Alt** to move freely, or disable **Image → Snap to center**. The setting is saved with your workspace.
+
+Image/text additions and property edits save immediately; the periodic autosave still covers other settings. Imported images are managed independently of the original files. Saved scenes render on startup even without a connected phone. An atomic workspace backup retains the preceding valid layout and its image assets for recovery.
+
 ## Updates
 
 LensioStudio checks GitHub on startup and offers to install a newer stable version. You can also check from the tray menu → **Check for app updates**. The header button shows **Checking for updates...** while checking GitHub over HTTPS. Only the Windows EXE is downloaded. Its length and SHA-256 must match GitHub release metadata; oversized, truncated or changed downloads are rejected. The layout must save successfully before the app closes safely and opens the verified **LensioStudio Setup** with the current installation folder selected. Choose **Install and open** to replace the EXE atomically and reopen the studio. Setup rechecks the hash and runs without elevation. Keep the app in a user-writable folder. These installers are not code-signed.

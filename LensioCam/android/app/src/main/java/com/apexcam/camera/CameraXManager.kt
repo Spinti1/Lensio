@@ -27,6 +27,16 @@ class CameraXManager(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner
 ) {
+    private var targetRotation=android.view.Surface.ROTATION_0
+    private val orientationListener=object:android.view.OrientationEventListener(context,android.hardware.SensorManager.SENSOR_DELAY_NORMAL){
+        override fun onOrientationChanged(orientation:Int){
+            val rotation=DeviceRotation.fromDegrees(orientation,targetRotation)
+            if(rotation==targetRotation)return
+            targetRotation=rotation
+            imageAnalysis?.targetRotation=rotation
+            preview?.targetRotation=rotation
+        }
+    }
     private val tag = "CameraXManager"
     private var cameraProvider: ProcessCameraProvider? = null
     private var providerLoading = false
@@ -155,6 +165,7 @@ class CameraXManager(
     /** Capture belongs to the foreground service, even with no activity/viewfinder. */
     fun startCapture(onReady: () -> Unit = {}) {
         if (released) return
+        if(orientationListener.canDetectOrientation())orientationListener.enable()
         if (cameraProvider != null) { if (camera == null) bindCamera(); onReady(); return }
         readyCallbacks.add(onReady)
         if (providerLoading) return
@@ -321,7 +332,7 @@ class CameraXManager(
         Log.i(tag, "Selected camera=" + selectedInfo?.let { Camera2CameraInfo.from(it).cameraId } +
             " fps=" + targetFpsRange + " focus=" + focusMode)
 
-        val previewBuilder = Preview.Builder()
+        val previewBuilder = Preview.Builder().setTargetRotation(targetRotation)
             .setResolutionSelector(resolutionSelector)
         try {
             Camera2Interop.Extender(previewBuilder)
@@ -335,7 +346,7 @@ class CameraXManager(
             if (pv != null) it.setSurfaceProvider(pv.surfaceProvider)
         }
 
-        val analysisBuilder = ImageAnalysis.Builder()
+        val analysisBuilder = ImageAnalysis.Builder().setTargetRotation(targetRotation)
             .setResolutionSelector(analysisResolutionSelector)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
@@ -387,7 +398,7 @@ class CameraXManager(
                             )
                         )
                         .build()
-                    val fbPrevBuilder = Preview.Builder().setResolutionSelector(fallbackSelector)
+                    val fbPrevBuilder = Preview.Builder().setTargetRotation(targetRotation).setResolutionSelector(fallbackSelector)
                     try {
                         Camera2Interop.Extender(fbPrevBuilder)
                             .apply { targetFpsRange?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) } }
@@ -397,7 +408,7 @@ class CameraXManager(
                     } catch (e: Exception) { }
                     preview = fbPrevBuilder.build().also { if (pv != null) it.setSurfaceProvider(pv.surfaceProvider) }
 
-                    val fbAnaBuilder = ImageAnalysis.Builder().setResolutionSelector(fallbackSelector)
+                    val fbAnaBuilder = ImageAnalysis.Builder().setTargetRotation(targetRotation).setResolutionSelector(fallbackSelector)
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                     try {
@@ -581,6 +592,7 @@ class CameraXManager(
 
     fun release() {
         released = true
+        orientationListener.disable()
         readyCallbacks.clear()
         softwarePreview?.setImageDrawable(null)
         softwarePreview = null

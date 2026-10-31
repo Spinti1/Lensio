@@ -152,6 +152,7 @@ namespace ApexCam
             BottomRight
         }
         private TransformHandle activeHandle = TransformHandle.None;
+        private bool snapToCenter=true,snapCenterX,snapCenterY;
         private bool isDraggingLayer = false;
         private PointF dragStartMouse = PointF.Empty;
         private RectangleF dragStartBounds = RectangleF.Empty;
@@ -288,6 +289,9 @@ namespace ApexCam
             this.Visible = true;
             this.BringToFront();
             this.Activate();
+            Interlocked.Exchange(ref previewRefreshPending,0);
+            ComposeDevices();
+            RequestPreviewRefresh();
             SafeBeginInvoke(CheckVirtualCameraSetup);
 
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
@@ -927,7 +931,7 @@ namespace ApexCam
                         if(i==4) bar.Controls[i].Text = selectedLayer != null && !selectedLayer.Visible ? "Show" : "Hide";
                     }
             }
-            if(previewPanel != null) previewPanel.Invalidate();
+            CommitSceneEdit();
         }
 
         private void AddImageLayerFromFile(string file, float x, float y)
@@ -1052,7 +1056,7 @@ namespace ApexCam
             {
                 selectedLayer.Opacity = tbOp.Value / 100.0f;
                 lblOp.Text = "Opacity: " + tbOp.Value + "%";
-                if (previewPanel != null) previewPanel.Invalidate();
+                if (previewPanel != null) CommitSceneEdit();
             };
             propContentPanel.Controls.Add(tbOp);
             y += 30;
@@ -1060,7 +1064,7 @@ namespace ApexCam
             if (selectedLayer.Type == SourceType.Camera)
             {
                 var fit=CreateModernButton("Fit camera to canvas",ColorButtonDark,4,y,w,28);
-                fit.Click += (s,e) => { selectedLayer.SetBounds(new RectangleF(0,0,1920,1080)); previewPanel.Invalidate(); };
+                fit.Click += (s,e) => { selectedLayer.SetBounds(new RectangleF(0,0,1920,1080)); CommitSceneEdit(); };
                 propContentPanel.Controls.Add(fit);
                 y+=32;
             }
@@ -1094,7 +1098,7 @@ namespace ApexCam
                 {
                     selectedLayer.X = (1920 - selectedLayer.Width) / 2;
                     selectedLayer.Y = (1080 - selectedLayer.Height) / 2;
-                    if (previewPanel != null) previewPanel.Invalidate();
+                    if (previewPanel != null) CommitSceneEdit();
                 };
                 propContentPanel.Controls.Add(btnCenter);
                 y += 32;
@@ -1125,7 +1129,7 @@ namespace ApexCam
                 txt.TextChanged += (s, e) =>
                 {
                     selectedLayer.TextContent = txt.Text;
-                    if (previewPanel != null) previewPanel.Invalidate();
+                    if (previewPanel != null) CommitSceneEdit();
                 };
                 propContentPanel.Controls.Add(txt);
                 y += 28;
@@ -1155,7 +1159,7 @@ namespace ApexCam
                 {
                     selectedLayer.FontSize = tbF.Value;
                     lblFSize.Text = "Font Size: " + tbF.Value;
-                    if (previewPanel != null) previewPanel.Invalidate();
+                    if (previewPanel != null) CommitSceneEdit();
                 };
                 propContentPanel.Controls.Add(tbF);
                 y += 30;
@@ -1198,7 +1202,7 @@ namespace ApexCam
                 {
                     selectedLayer.FontSize = tbF.Value;
                     lblFSize.Text = "Clock Font Size: " + tbF.Value;
-                    if (previewPanel != null) previewPanel.Invalidate();
+                    if (previewPanel != null) CommitSceneEdit();
                 };
                 propContentPanel.Controls.Add(tbF);
                 y += 30;
@@ -1252,7 +1256,7 @@ namespace ApexCam
             cbPresets.SelectedIndexChanged += (s, e) =>
             {
                 currentFilter = (FilterMode)cbPresets.SelectedIndex;
-                if (previewPanel != null) previewPanel.Invalidate();
+                if (previewPanel != null) CommitSceneEdit();
             };
             filterContent.Controls.Add(cbPresets);
             y += 26;
@@ -1442,7 +1446,7 @@ namespace ApexCam
                 currentZoom = tbZoom.Value / 10.0f;
                 lblZoomVal.Text = currentZoom.ToString("0.0") + "x";
                 if (receiver != null) SendPhoneControl("{\"zoom\":" + currentZoom.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                if (previewPanel != null) previewPanel.Invalidate();
+                if (previewPanel != null) CommitSceneEdit();
             };
             ctrlContent.Controls.Add(tbZoom);
             y += 38; // Ample clearance guarantees TrackBar never covers buttons below!
@@ -1560,6 +1564,12 @@ namespace ApexCam
             return TransformHandle.None;
         }
 
+        public static RectangleF SnapToCanvasCenter(RectangleF bounds,float threshold,out bool horizontal,out bool vertical){
+            horizontal=Math.Abs(bounds.X+bounds.Width/2-960)<=threshold;
+            vertical=Math.Abs(bounds.Y+bounds.Height/2-540)<=threshold;
+            if(horizontal)bounds.X=960-bounds.Width/2;if(vertical)bounds.Y=540-bounds.Height/2;
+            return bounds;
+        }
         private void OnPreviewMouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Right) {
@@ -1667,6 +1677,12 @@ namespace ApexCam
                     if(activeHandle==TransformHandle.TopLeft || activeHandle==TransformHandle.TopRight)
                         newB.Y=dragStartBounds.Bottom-newB.Height;
                 }
+                snapCenterX=snapCenterY=false;
+                if(activeHandle==TransformHandle.Body && snapToCenter && (ModifierKeys&Keys.Alt)==0){
+                    var canvas=CanvasToScreenRect(new RectangleF(0,0,1920,1080));
+                    float threshold=8f*1920/Math.Max(1,canvas.Width);
+                    newB=SnapToCanvasCenter(newB,threshold,out snapCenterX,out snapCenterY);
+                }
                 selectedLayer.SetBounds(newB);
                 previewPanel.Invalidate();
                 return;
@@ -1707,6 +1723,8 @@ namespace ApexCam
         {
             isDraggingLayer = false;
             activeHandle = TransformHandle.None;
+            snapCenterX=snapCenterY=false;
+            CommitSceneEdit();
         }
 
         // ==========================================

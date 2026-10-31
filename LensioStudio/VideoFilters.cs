@@ -437,8 +437,8 @@ namespace ApexCam
                 return scaled;
             }
 
-            // 1. Strict 16:9 Smart Center-Crop
-            const float targetAspect = 16.0f / 9.0f;
+            // Crop to the requested output aspect, including portrait frames.
+            float targetAspect = targetW / (float)targetH;
             float srcAspect = (float)srcW / srcH;
 
             int cropW = srcW;

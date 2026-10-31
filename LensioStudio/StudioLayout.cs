@@ -104,6 +104,10 @@ namespace ApexCam
             var actions = new ToolStripDropDownButton("Image");
             actions.DropDownItems.Add("Mirror", null, (s,e) => { mirrorH = !mirrorH; });
             actions.DropDownItems.Add("Flip", null, (s,e) => { flipV = !flipV; });
+            var snap=new ToolStripMenuItem("Snap to center (Alt to bypass)"){CheckOnClick=true,Checked=snapToCenter};
+            snap.CheckedChanged+=(s,e)=>{snapToCenter=snap.Checked;CommitSceneEdit();};
+            actions.DropDownOpening+=(s,e)=>snap.Checked=snapToCenter;
+            actions.DropDownItems.Add(snap);
             actions.DropDownItems.Add("Save snapshot", null, OnTakeSnapshot);
             actions.DropDownItems.Add("Fullscreen (F11)", null, (s,e) => ToggleFullscreen());
             studioStatus.Items.Add(panels);

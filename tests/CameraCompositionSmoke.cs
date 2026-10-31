@@ -22,6 +22,12 @@ class CameraCompositionSmoke {
             layer.Width=2;layer.Height=2;layer.Opacity=1;
             using(var output=Render(layer,4,4)){Check(output.GetPixel(1,1).R==255 && output.GetPixel(2,2).B==255,"Native pixels or resize bounds changed");}
         }
+        using(var portrait=new Bitmap(90,160)){
+            using(var g=Graphics.FromImage(portrait)){g.Clear(Color.Lime);g.FillRectangle(Brushes.Red,0,0,90,30);g.FillRectangle(Brushes.Blue,0,130,90,30);}
+            using(var output=VideoFilters.ApplyFiltersAndTransform(portrait,FilterMode.None,1,false,false,1,0,0,0,false,90,160)){
+                Check(output.GetPixel(45,5).R>200 && output.GetPixel(45,155).B>200,"Portrait filtering cropped the top or bottom of the rotated camera");
+            }
+        }
         Console.WriteLine("PASS full-resolution interpolation, edge colors, fresh frames, opacity and native-size resize");return 0;
     }
 }

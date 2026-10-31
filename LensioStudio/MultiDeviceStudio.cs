@@ -14,6 +14,7 @@ namespace ApexCam
             public ObsLayer Layer;
             public bool Connected;
             public int Battery, Fps;
+            public bool? Portrait;
             public float Temperature;
             public bool Charging;
         }
@@ -23,6 +24,7 @@ namespace ApexCam
         private Panel phoneCards;
         private System.Threading.Timer compositionTimer;
         private int composing;
+        private bool hasSceneComposition;
         private volatile bool compositionStopped;
         private void InitializeDeviceComposition()
         {
@@ -48,6 +50,11 @@ namespace ApexCam
             return new ObsLayer {Type=SourceType.Camera,DeviceId=info.Id,Name=FriendlyPhoneName(info),
                 X=main?0:1392,Y=main?0:36+index*290,Width=main?1920:480,Height=main?1080:270};
         }
+        private void AddPhoneLayer(ObsLayer layer,bool main){
+            var existing=scene.GetLayersSnapshot();scene.AddLayer(layer);
+            int behind=main?existing.Count:existing.FindAll(l=>l.Type!=SourceType.Camera).Count;
+            for(int i=0;i<behind;i++)scene.MoveDown(layer);
+        }
         private void HandlePhoneConnected(PhoneDeviceInfo info)
         {
             if(compositionStopped)return;
@@ -58,10 +65,10 @@ namespace ApexCam
                     if(main)mainDeviceId=info.Id;
                     slot=new PhoneSlot {Info=info,Connected=true,Layer=CreatePhoneLayer(info,main,Math.Max(0,phoneSlots.Count-1))};
                     phoneSlots.Add(info.Id,slot);
-                    scene.AddLayer(slot.Layer);
+                    AddPhoneLayer(slot.Layer,main);
                 } else {
                     slot.Info=info;slot.Connected=true;
-                    if(slot.Layer.IsDisposed) {slot.Layer=CreatePhoneLayer(info,mainDeviceId==info.Id,0);scene.AddLayer(slot.Layer);}
+                    if(slot.Layer.IsDisposed) {slot.Layer=CreatePhoneLayer(info,mainDeviceId==info.Id,0);AddPhoneLayer(slot.Layer,mainDeviceId==info.Id);}
                 }
             }
             RestorePhonePreferences(info.Id);
@@ -217,33 +224,57 @@ namespace ApexCam
             if(compositionStopped)return;
             Bitmap filtered=VideoFilters.ApplyFiltersAndTransform(raw,currentFilter,1f,mirrorH,flipV,
                 brightnessVal,contrastVal,saturationVal,exposureVal,isAutoMode,raw.Width,raw.Height);
-            slot.Layer.SetCameraFrame(filtered);
+            bool portrait=raw.Height>raw.Width;
+            lock(devicesGate){
+                if(slot.Portrait!=portrait){
+                    var bounds=slot.Layer.GetBounds();float centerX=bounds.X+bounds.Width/2,centerY=bounds.Y+bounds.Height/2;
+                    float aspect=raw.Width/(float)raw.Height;
+                    float width=bounds.Width,height=bounds.Height;
+                    if(Math.Abs(width/Math.Max(1,height)-aspect)>.01f){
+                        width=height*aspect;
+                        if(width>1920){height*=1920/width;width=1920;}
+                        if(height>1080){width*=1080/height;height=1080;}
+                        slot.Layer.SetBounds(new RectangleF(centerX-width/2,centerY-height/2,width,height));
+                    }
+                    slot.Portrait=portrait;
+                }
+                slot.Layer.SetCameraFrame(filtered);
+            }
             slot.Battery=battery;slot.Fps=fps;slot.Temperature=temp;slot.Charging=charging;
             if(id==mainDeviceId){batteryPercent=battery;phoneFps=fps;deviceTemp=temp;isPhoneCharging=charging;latencyMs=rtt;}
         }
         private void ComposeDevices()
         {
-            if(compositionStopped || Interlocked.CompareExchange(ref composing,1,0)!=0)return;
+            if(!workspaceReady || compositionStopped || Interlocked.CompareExchange(ref composing,1,0)!=0)return;
             Bitmap image=null;
             try {
-                lock(devicesGate)if(phoneSlots.Count==0)return;
+                int count=scene.LayerCount;
+                if(count==0 && !hasSceneComposition)return;
+                hasSceneComposition=count>0;
                 image=new Bitmap(currentResWidth,currentResHeight,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 using(var g=Graphics.FromImage(image)) {g.Clear(Color.Black);scene.RenderScene(g,image.Width,image.Height);}
                 if(compositionStopped)return;
                 if(isVirtualCamActive && vcamBridge!=null)vcamBridge.WriteFrame(image);
                 lock(frameLock){var old=currentFrame;currentFrame=image;image=null;if(old!=null)old.Dispose();}
-                if(Interlocked.CompareExchange(ref previewRefreshPending,1,0)==0)SafeBeginInvoke(() => {
-                    Interlocked.Exchange(ref previewRefreshPending,0);
-                    if(!compositionStopped)previewPanel.Invalidate();
-                });
+                RequestPreviewRefresh();
             } catch(Exception) { /* Connection teardown must not terminate the compositor. */ }
             finally {if(image!=null)image.Dispose();Interlocked.Exchange(ref composing,0);}
         }
+        private void RequestPreviewRefresh(){
+            if(!IsHandleCreated || IsDisposed || Interlocked.CompareExchange(ref previewRefreshPending,1,0)!=0)return;
+            try{BeginInvoke((Action)(()=>{Interlocked.Exchange(ref previewRefreshPending,0);if(!compositionStopped)previewPanel.Invalidate();}));}
+            catch{Interlocked.Exchange(ref previewRefreshPending,0);}
+        }
+        private void CommitSceneEdit(){SaveWorkspace();RequestPreviewRefresh();}
         private void DrawCameraGuides(Graphics g)
         {
             if(isFullscreen)return;
             var canvas=CanvasToScreenRect(new RectangleF(0,0,1920,1080));
             using(var pen=new Pen(Color.FromArgb(170,160,176,196),1f))g.DrawRectangle(pen,canvas.X,canvas.Y,canvas.Width-1,canvas.Height-1);
+            if(isDraggingLayer && (snapCenterX||snapCenterY))using(var guide=new Pen(ColorAccentCyan,1.5f)){
+                if(snapCenterX)g.DrawLine(guide,canvas.X+canvas.Width/2,canvas.Top,canvas.X+canvas.Width/2,canvas.Bottom);
+                if(snapCenterY)g.DrawLine(guide,canvas.Left,canvas.Y+canvas.Height/2,canvas.Right,canvas.Y+canvas.Height/2);
+            }
             if(selectedLayer==null || selectedLayer.Type!=SourceType.Camera)return;
             var bounds=CanvasToScreenRect(selectedLayer.GetBounds());
             var state=g.Save();g.SetClip(canvas);

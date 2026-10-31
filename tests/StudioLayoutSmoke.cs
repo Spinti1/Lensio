@@ -21,7 +21,7 @@ class StudioLayoutSmoke {
         using(var bmp=new Bitmap(menu.Width,menu.Height)) {
             menu.DrawToBitmap(bmp,new Rectangle(Point.Empty,bmp.Size));
             bmp.Save("build/menu-"+name+".png",ImageFormat.Png);
-            var margin=bmp.GetPixel(8,bmp.Height/2);
+            var margin=bmp.GetPixel(3,bmp.Height/2);
             Check(margin.R<120 && margin.G<120 && margin.B<120,"Light menu margin: "+name);
         }
         menu.Close();

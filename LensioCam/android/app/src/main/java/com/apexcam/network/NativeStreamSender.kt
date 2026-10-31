@@ -30,6 +30,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     private var pendingSocket: Socket? = null
     private var generation = 0L
     @Volatile private var connecting = false
+    private var rotatedYuv=ByteArray(0)
     private var yuvBytes = ByteArray(0)
     @Volatile private var writeStartedAt = 0L
     @Volatile private var busySince = 0L
@@ -155,6 +156,9 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
         try {
             val width = imageProxy.width
             val height = imageProxy.height
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            val outputWidth=if(rotation==90||rotation==270)height else width
+            val outputHeight=if(rotation==90||rotation==270)width else height
             streamExecutor.execute {
                 var imageClosed = false
                 try {
@@ -172,9 +176,15 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                         width/2, height/2, yuvBytes, width*height+1, 2)
                     imageProxy.close()
                     imageClosed = true
+                    var pixels=yuvBytes
+                    if(rotation!=0){
+                        if(rotatedYuv.size!=size)rotatedYuv=ByteArray(size)
+                        YuvPacking.rotateNv21(yuvBytes,rotatedYuv,width,height,rotation)
+                        pixels=rotatedYuv
+                    }
                     buffer.reset()
-                    if (!YuvImage(yuvBytes, ImageFormat.NV21, width, height, null)
-                        .compressToJpeg(Rect(0,0,width,height), 85, buffer)) return@execute
+                    if (!YuvImage(pixels, ImageFormat.NV21, outputWidth, outputHeight, null)
+                        .compressToJpeg(Rect(0,0,outputWidth,outputHeight), 85, buffer)) return@execute
                     if (previewVisible) {
                         onPreviewJpeg?.invoke(buffer.toByteArray())
                     }
@@ -183,7 +193,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                     if (owner != null && session === owner) {
                         val header = ByteBuffer.allocate(32).order(ByteOrder.LITTLE_ENDIAN)
                         header.put(byteArrayOf(0x41, 0x50, 0x43, 0x4D))
-                        header.putInt(width).putInt(height).putInt(buffer.size()).putInt(currentFps)
+                        header.putInt(outputWidth).putInt(outputHeight).putInt(buffer.size()).putInt(currentFps)
                         header.putInt(batteryLevel.coerceIn(0, 100) or (if (isCharging) 0x10000 else 0))
                         header.putInt((tempC * 10).toInt()).putInt(if (isCharging) 1 else 0)
                         writeStartedAt = clock()

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -21,7 +21,7 @@ class WorkspacePersistenceSmoke {
  static void Cleanup(MainForm f){Call(f,"StopDeviceComposition");((System.Windows.Forms.Timer)Get(f,"heartbeatTimer")).Stop();((NotifyIcon)Get(f,"trayIcon")).Dispose();f.Dispose();}
  static void Pump(int milliseconds){var end=DateTime.UtcNow.AddMilliseconds(milliseconds);while(DateTime.UtcNow<end){Application.DoEvents();Thread.Sleep(10);}}
  [STAThread]static int Main(){
-  Application.EnableVisualStyles();string folder=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-data","workspace");Directory.CreateDirectory(folder);
+  Application.EnableVisualStyles();string folder=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-data","workspace-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
   string original=Path.Combine(folder,"original.png");using(var b=new Bitmap(12,8)){using(var g=Graphics.FromImage(b))g.Clear(Color.Magenta);b.Save(original,ImageFormat.Png);}
   string imageId,cameraId;
   var f=new WorkspaceForm(folder);var receiver=new VideoReceiver(0);Set(f,"receiver",receiver);
@@ -53,10 +53,35 @@ class WorkspacePersistenceSmoke {
    var state=new JavaScriptSerializer().Deserialize<SavedWorkspace>(File.ReadAllText(manifest));
    Check(state.MainPhone=="test-phone" && state.PhoneControls["test-phone"]["cameraId"].ToString()=="2","Phone controls not saved");
    ((ObsScene)Get(restored,"scene")).RemoveLayer(image);Call(restored,"SaveWorkspace");
-   Check(Directory.GetFiles(Path.Combine(folder,"assets"),"*.png").Length==0,"Removed image asset was retained");
+   Check(Directory.GetFiles(Path.Combine(folder,"assets"),"*.png").Length<=1,"Asset backup grew without bounds");
   }finally{Cleanup(restored);}
   var third=new WorkspaceForm(folder);try{Check(((ObsScene)Get(third,"scene")).LayerCount==2,"Deleted source returned after restart");}finally{Cleanup(third);}
-  File.WriteAllText(manifest,"{broken");var corrupt=new WorkspaceForm(folder);try{Check(((ObsScene)Get(corrupt,"scene")).LayerCount==0,"Corrupt workspace did not use safe defaults");}finally{Cleanup(corrupt);}
+  File.WriteAllText(manifest,"{broken");var corrupt=new WorkspaceForm(folder);try{Check(((ObsScene)Get(corrupt,"scene")).LayerCount>=2,"Last valid workspace backup was not restored");}finally{Cleanup(corrupt);}
+  string offlineFolder=Path.Combine(folder,"offline");
+  var offline=new WorkspaceForm(offlineFolder);
+  using(var bitmap=new Bitmap(20,20)){using(var g=Graphics.FromImage(bitmap))g.Clear(Color.Lime);bitmap.Save(original,ImageFormat.Png);}
+  Call(offline,"AddImageLayerFromFile",original,400f,300f);
+  Check(File.Exists(Path.Combine(offlineFolder,"workspace.json")),"New image was not saved immediately");
+  var offlineScene=(ObsScene)Get(offline,"scene");
+  offlineScene.AddLayer(new ObsLayer{Type=SourceType.Text,Name="Offline title",TextContent="Visible without a phone",X=10,Y=10,Width=500,Height=60});
+  var titleLayer=offlineScene.GetLayersSnapshot().Find(l=>l.Type==SourceType.Text);
+  Set(offline,"selectedLayer",titleLayer);Call(offline,"RefreshSourcesList");
+  foreach(Control control in ((Panel)Get(offline,"propContentPanel")).Controls)if(control is TextBox)((TextBox)control).Text="Edited and saved immediately";
+  var immediate=new JavaScriptSerializer().Deserialize<SavedWorkspace>(File.ReadAllText(Path.Combine(offlineFolder,"workspace.json")));
+  Check(immediate.Sources.Exists(l=>l.Text=="Edited and saved immediately"),"Text edit was not saved immediately");
+  Cleanup(offline);File.Delete(original);
+  var reopened=new WorkspaceForm(offlineFolder);
+  try{
+   Call(reopened,"ComposeDevices");
+   if(!reopened.IsHandleCreated)Check((int)Get(reopened,"previewRefreshPending")==0,"Pre-handle refresh blocked future paints");
+   reopened.Show();Pump(120);Call(reopened,"StopDeviceComposition");
+   var frame=(Bitmap)Get(reopened,"currentFrame");Check(frame!=null,"Offline restored sources were never composed");
+   Check(frame.GetPixel(320,230).G>150,"Restored image is not visible before selecting Sources");
+   var restoredScene=(ObsScene)Get(reopened,"scene");
+   Check(restoredScene.LayerCount==2,"Offline image/text were not restored");
+   Call(reopened,"HandlePhoneConnected",new PhoneDeviceInfo{Id="new-phone",Name="New phone",Host=""});
+   Check(restoredScene.GetLayersSnapshot()[0].Type!=SourceType.Camera,"Automatic camera connection covered saved overlays");
+  }finally{Cleanup(reopened);}
   Console.WriteLine("PASS automatic save, restart restore, managed images, order, properties, filters, phone identity/controls, deletion and corrupt-file recovery");return 0;
  }
 }

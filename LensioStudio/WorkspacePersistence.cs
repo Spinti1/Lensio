@@ -18,6 +18,7 @@ namespace ApexCam {
         public int Version=1,ResolutionWidth=1280,Filter,WindowX,WindowY,WindowWidth=1280,WindowHeight=760;
         public float Exposure,Brightness,Contrast,Saturation;
         public bool Mirror,Flip,AutoLevels,VirtualCamera=true,Maximized,PcAudio,Microphone;
+        public bool SnapToCenter=true;
         public string MainPhone,ControlledPhone,SelectedSource;
         public List<SavedSource> Sources=new List<SavedSource>();
         public Dictionary<string,Dictionary<string,object>> PhoneControls=new Dictionary<string,Dictionary<string,object>>();
@@ -37,9 +38,10 @@ namespace ApexCam {
         private static float SafeFloat(float value,float fallback,float min,float max){return float.IsNaN(value)||float.IsInfinity(value)?fallback:Math.Max(min,Math.Min(max,value));}
         private void InitializeWorkspace() {
             try {
-                if(File.Exists(WorkspacePath)) {
-                    var state=workspaceJson.Deserialize<SavedWorkspace>(File.ReadAllText(WorkspacePath));
-                    if(state==null || state.Version!=1 || state.Sources==null || state.Sources.Count>256)throw new InvalidDataException("Invalid workspace format");
+                if(File.Exists(WorkspacePath) || File.Exists(WorkspacePath+".bak")) {
+                    SavedWorkspace state;
+                    try{state=ReadWorkspace(WorkspacePath);}
+                    catch(Exception error){LogWorkspaceError("restore",error);state=ReadWorkspace(WorkspacePath+".bak");}
                     RestoreWorkspace(state);
                 }
             } catch(Exception error) {LogWorkspaceError("restore",error);}
@@ -48,6 +50,11 @@ namespace ApexCam {
             workspaceSaveTimer.Tick += (s,e) => SaveWorkspace();
             workspaceSaveTimer.Start();
             Disposed += (s,e) => {if(workspaceSaveTimer!=null)workspaceSaveTimer.Dispose();};
+        }
+        private SavedWorkspace ReadWorkspace(string path){
+            var state=workspaceJson.Deserialize<SavedWorkspace>(File.ReadAllText(path));
+            if(state==null||state.Version!=1||state.Sources==null||state.Sources.Count>256)throw new InvalidDataException("Invalid workspace format");
+            return state;
         }
         private void LogWorkspaceError(string action,Exception error) {
             try{File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"app.log"),DateTime.Now+" - [Workspace] "+action+": "+error.Message+Environment.NewLine);}catch{}
@@ -68,7 +75,7 @@ namespace ApexCam {
             Rectangle bounds=isFullscreen?RestoreBounds:(WindowState==FormWindowState.Normal?Bounds:RestoreBounds);
             var state=new SavedWorkspace {ResolutionWidth=currentResWidth,Filter=(int)currentFilter,
                 Exposure=exposureVal,Brightness=brightnessVal,Contrast=contrastVal,Saturation=saturationVal,
-                Mirror=mirrorH,Flip=flipV,AutoLevels=isAutoMode,VirtualCamera=isVirtualCamActive,
+                SnapToCenter=snapToCenter,Mirror=mirrorH,Flip=flipV,AutoLevels=isAutoMode,VirtualCamera=isVirtualCamActive,
                 PcAudio=isPcAudioStreaming||restorePcAudioPending,Microphone=isMicStreaming||restoreMicPending,
                 MainPhone=mainDeviceId,ControlledPhone=controlledDeviceId,SelectedSource=selectedLayer==null?null:selectedLayer.Id,
                 WindowX=bounds.X,WindowY=bounds.Y,WindowWidth=bounds.Width,WindowHeight=bounds.Height,
@@ -94,9 +101,10 @@ namespace ApexCam {
                 Directory.CreateDirectory(workspaceDirectory);
                 string temporary=WorkspacePath+".tmp";
                 File.WriteAllText(temporary,json,new System.Text.UTF8Encoding(false));
-                if(File.Exists(WorkspacePath))File.Replace(temporary,WorkspacePath,null);else File.Move(temporary,WorkspacePath);
+                if(File.Exists(WorkspacePath))File.Replace(temporary,WorkspacePath,WorkspacePath+".bak");else File.Move(temporary,WorkspacePath);
                 lastWorkspaceJson=json;
                 var keep=new HashSet<string>();foreach(var source in state.Sources)if(source.Asset!=null)keep.Add(source.Asset);
+                try{if(File.Exists(WorkspacePath+".bak"))foreach(var source in ReadWorkspace(WorkspacePath+".bak").Sources)if(source.Asset!=null)keep.Add(source.Asset);}catch{}
                 string assets=Path.Combine(workspaceDirectory,"assets");
                 if(Directory.Exists(assets))foreach(string file in Directory.GetFiles(assets,"*.png")) {
                     string name=Path.GetFileName(file);
@@ -109,6 +117,7 @@ namespace ApexCam {
             cbPresets.SelectedIndex=Math.Max(0,Math.Min(cbPresets.Items.Count-1,state.Filter));
             tbExposure.Value=(int)SafeFloat(state.Exposure,0,-50,50);tbBrightness.Value=(int)SafeFloat(state.Brightness,0,-50,50);
             tbContrast.Value=(int)SafeFloat(state.Contrast,0,-50,50);tbSaturation.Value=(int)SafeFloat(state.Saturation,0,-100,100);
+            snapToCenter=state.SnapToCenter;
             mirrorH=state.Mirror;flipV=state.Flip;isAutoMode=state.AutoLevels;
             btnAutoMode.Text=isAutoMode?"Auto Levels: ON":"Auto Levels: OFF";btnAutoMode.BackColor=isAutoMode?ColorAccentEmerald:ColorButtonDark;
             if(isVirtualCamActive!=state.VirtualCamera)OnToggleVcam(null,EventArgs.Empty);

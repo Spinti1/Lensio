@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -138,9 +138,17 @@ class MultiDeviceSmoke {
             Check(scene.GetLayersSnapshot().FindAll(l=>l.DeviceId=="a").Count==1,"Reconnect duplicated a source");
             form.Size=new Size(1280,760);Thread.Sleep(80);Application.DoEvents();
             using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));bitmap.Save("build/multi-phone-workspace.png");}
-            Call(form,"StopDeviceComposition");
             ((System.Windows.Forms.Timer)Field(form,"heartbeatTimer")).Stop();
             ((NotifyIcon)Field(form,"trayIcon")).Dispose();
+            var mainLayer=scene.GetLayersSnapshot().Find(l=>l.DeviceId=="b");
+            using(var portrait=new Bitmap(90,160)){
+                using(var g=Graphics.FromImage(portrait))g.Clear(Color.Green);
+                Call(form,"ProcessDeviceFrame","b",portrait,70,false,25f,30,8);
+            }
+            Check(Math.Abs(mainLayer.Width/mainLayer.Height-90f/160)<.01,"Phone rotation did not change source to portrait");
+            using(var landscape=new Bitmap(160,90))Call(form,"ProcessDeviceFrame","b",landscape,70,false,25f,30,8);
+            Check(Math.Abs(mainLayer.Width/mainLayer.Height-160f/90)<.01,"Phone rotation did not restore landscape");
+            Call(form,"StopDeviceComposition");
             Console.WriteLine("PASS camera composition, roles, drag, resize and responsive controls");
         }
         return 0;

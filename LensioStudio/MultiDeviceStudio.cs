@@ -24,6 +24,14 @@ namespace ApexCam
         private Panel phoneCards;
         private System.Threading.Timer compositionTimer;
         private int composing;
+        private sealed class ActualFrameRate {
+            private readonly object gate=new object();private long started=System.Diagnostics.Stopwatch.GetTimestamp(),last;private int count,rate;
+            public void Tick(){lock(gate){long now=System.Diagnostics.Stopwatch.GetTimestamp();last=now;count++;long elapsed=now-started;if(elapsed>=System.Diagnostics.Stopwatch.Frequency){rate=(int)Math.Round(count*(double)System.Diagnostics.Stopwatch.Frequency/elapsed);count=0;started=now;}}}
+            public int Value {get{lock(gate)return last==0||System.Diagnostics.Stopwatch.GetTimestamp()-last>2*System.Diagnostics.Stopwatch.Frequency?0:rate;}}
+            public void Reset(){lock(gate){started=System.Diagnostics.Stopwatch.GetTimestamp();last=0;count=rate=0;}}
+        }
+        private readonly ActualFrameRate cameraFrameRate=new ActualFrameRate(),sceneFrameRate=new ActualFrameRate();
+        private string measuredMainId;private long measuredMainRevision=-1;
         private bool hasSceneComposition;
         private volatile bool compositionStopped;
         private void InitializeDeviceComposition()
@@ -255,6 +263,15 @@ namespace ApexCam
                 using(var g=Graphics.FromImage(image)) {g.Clear(Color.Black);scene.RenderScene(g,image.Width,image.Height);}
                 if(compositionStopped)return;
                 if(isVirtualCamActive && vcamBridge!=null)vcamBridge.WriteFrame(image);
+                sceneFrameRate.Tick();
+                lock(devicesGate){
+                    if(measuredMainId!=mainDeviceId){measuredMainId=mainDeviceId;measuredMainRevision=-1;cameraFrameRate.Reset();}
+                    PhoneSlot main;
+                    if(mainDeviceId!=null&&phoneSlots.TryGetValue(mainDeviceId,out main)&&main.Connected&&main.Layer.Visible){
+                        long revision=main.Layer.RenderedRevision;
+                        if(revision>=0 && revision!=measuredMainRevision){measuredMainRevision=revision;cameraFrameRate.Tick();}
+                    }
+                }
                 lock(frameLock){var old=currentFrame;currentFrame=image;image=null;if(old!=null)old.Dispose();}
                 RequestPreviewRefresh();
             } catch(Exception) { /* Connection teardown must not terminate the compositor. */ }

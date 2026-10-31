@@ -33,9 +33,14 @@ namespace ApexCam
         private readonly object imageLock = new object();
         private ImageAttributes opaqueAttributes;
         private CameraFrameScaler cameraScaler;
-        private long frameRevision,scaledRevision=-1;
+        private long frameRevision,scaledRevision=-1,renderedRevision=-1;
+        public long RenderedRevision {get{return System.Threading.Interlocked.Read(ref renderedRevision);}}
         private int scaledWidth,scaledHeight;
         private float scaledOpacity;
+        private Bitmap imageCache;
+        private Image imageCacheSource;
+        private long imageCacheRevision=-1;
+        private float imageCacheOpacity;
         public bool IsDisposed { get; private set; }
         public string DeviceId { get; set; }
         public byte[] ExportImagePng() {
@@ -115,6 +120,34 @@ namespace ApexCam
             lock(imageLock) { if(!IsDisposed) RenderCore(g,canvasW,canvasH); }
         }
 
+        public void RenderImage(Graphics g,float scaleX,float scaleY) {
+            lock(imageLock) {
+                if(IsDisposed || !Visible || BitmapImage==null || Opacity<=0)return;
+                var rect=new Rectangle((int)(X*scaleX),(int)(Y*scaleY),(int)(Width*scaleX),(int)(Height*scaleY));
+                if(rect.Width<=0 || rect.Height<=0)return;
+                if(rect.Width>8192 || rect.Height>8192 || (long)rect.Width*rect.Height>16*1024*1024){
+                    var state=g.Save();try{g.ScaleTransform(scaleX,scaleY);RenderCore(g,1920,1080);}finally{g.Restore(state);}return;
+                }
+                bool resized=imageCache==null || imageCache.Width!=rect.Width || imageCache.Height!=rect.Height;
+                if(resized){if(imageCache!=null)imageCache.Dispose();imageCache=new Bitmap(rect.Width,rect.Height,PixelFormat.Format32bppPArgb);}
+                if(resized || imageCacheRevision!=frameRevision || !object.ReferenceEquals(imageCacheSource,BitmapImage) || imageCacheOpacity!=Opacity){
+                    using(var cached=Graphics.FromImage(imageCache))using(var attr=new ImageAttributes()){
+                        cached.Clear(Color.Transparent);
+                        cached.CompositingMode=CompositingMode.SourceCopy;
+                        cached.InterpolationMode=InterpolationMode.HighQualityBicubic;
+                        cached.PixelOffsetMode=PixelOffsetMode.Default;
+                        cached.SmoothingMode=SmoothingMode.HighQuality;
+                        var matrix=new ColorMatrix();matrix.Matrix33=Math.Max(0,Math.Min(1,Opacity));attr.SetColorMatrix(matrix);attr.SetWrapMode(WrapMode.TileFlipXY);
+                        cached.DrawImage(BitmapImage,new Rectangle(0,0,rect.Width,rect.Height),0,0,BitmapImage.Width,BitmapImage.Height,GraphicsUnit.Pixel,attr);
+                    }
+                    imageCacheSource=BitmapImage;imageCacheRevision=frameRevision;imageCacheOpacity=Opacity;
+                }
+                var previous=g.CompositingMode;
+                try{g.CompositingMode=CompositingMode.SourceOver;g.DrawImageUnscaled(imageCache,rect.Location);}
+                finally{g.CompositingMode=previous;}
+            }
+        }
+
         public void RenderCamera(Graphics g,float scaleX,float scaleY)
         {
             lock(imageLock) {
@@ -140,6 +173,7 @@ namespace ApexCam
                 try {
                     g.CompositingMode=Opacity>=1 ? CompositingMode.SourceCopy : CompositingMode.SourceOver;
                     g.DrawImageUnscaled(image,rect.Location);
+                    System.Threading.Interlocked.Exchange(ref renderedRevision,frameRevision);
                 } finally {g.CompositingMode=previous;}
             }
         }
@@ -274,6 +308,7 @@ namespace ApexCam
                 IsDisposed=true;
                 if(opaqueAttributes!=null){opaqueAttributes.Dispose();opaqueAttributes=null;}
                 if(cameraScaler!=null){cameraScaler.Dispose();cameraScaler=null;}
+                if(imageCache!=null){imageCache.Dispose();imageCache=null;}imageCacheSource=null;
                 if(BitmapImage!=null)BitmapImage.Dispose();
                 BitmapImage=null;
             }
@@ -376,6 +411,8 @@ namespace ApexCam
                     var layer=layers[i];
                     if(layer.Type==SourceType.Camera) {
                         layer.RenderCamera(g,canvasW/1920f,canvasH/1080f);
+                    } else if(layer.Type==SourceType.Image) {
+                        layer.RenderImage(g,canvasW/1920f,canvasH/1080f);
                     } else {
                         var state=g.Save();
                         try {g.ScaleTransform(canvasW/1920f,canvasH/1080f);layer.Render(g,1920,1080);}

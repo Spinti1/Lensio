@@ -471,7 +471,7 @@ namespace ApexCam
             }
 
             if(mainDeviceId!=null && mainDeviceId.StartsWith("web:")) {
-                TextRenderer.DrawText(g,"Web camera | "+phoneFps+" FPS | Battery / temperature unavailable",
+                TextRenderer.DrawText(g,"Web camera | "+cameraFrameRate.Value+" FPS | Battery / temperature unavailable",
                     Font,new Rectangle(12,6,Math.Max(0,panelTelemetry.Width-24),panelTelemetry.Height-12),
                     ColorTextPrimary,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
                 return;
@@ -542,7 +542,7 @@ namespace ApexCam
                 }
 
                 // FPS & Latency (Clean text without emoji boxes!)
-                int displayFps = phoneFps > 0 ? phoneFps : (receiver != null && receiver.CurrentFps > 0 ? receiver.CurrentFps : 30);
+                int displayFps = cameraFrameRate.Value;
                 string perfText = string.Format("{0} FPS  |  {1}ms", displayFps, latencyMs);
                 using (Font font = new Font("Segoe UI", 9f, FontStyle.Bold))
                 using (SolidBrush perfBrush = new SolidBrush(ColorAccentLightCyan))

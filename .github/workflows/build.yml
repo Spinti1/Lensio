@@ -18,7 +18,7 @@ jobs:
         run: |
           $compiler="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           Copy-Item artifacts/LensioStudio.exe ./LensioStudio.exe
-          foreach($name in @('FilterBehaviorSmoke','OverlayGeometrySmoke','CameraCompositionSmoke','MultiDeviceSmoke','StudioLayoutSmoke','WorkspacePersistenceSmoke','GitHubUpdaterSmoke','WebCameraBridgeSmoke','BundledSetupSmoke','UpdateSetupSmoke')) {
+          foreach($name in @('FilterBehaviorSmoke','ImageCacheSmoke','OverlayGeometrySmoke','CameraCompositionSmoke','MultiDeviceSmoke','StudioLayoutSmoke','WorkspacePersistenceSmoke','GitHubUpdaterSmoke','WebCameraBridgeSmoke','BundledSetupSmoke','UpdateSetupSmoke')) {
             $source=Join-Path $env:GITHUB_WORKSPACE "tests\$name.cs"
             $output=Join-Path $env:GITHUB_WORKSPACE "$name.exe"
             & $compiler /nologo '/r:System.dll,System.Core.dll,System.Drawing.dll,System.Windows.Forms.dll,System.Web.Extensions.dll' '/r:LensioStudio.exe' "/out:$output" $source

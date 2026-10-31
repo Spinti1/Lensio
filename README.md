@@ -35,6 +35,8 @@ Dragging a source near either scene-center axis snaps it exactly into alignment 
 
 Image/text additions and property edits save immediately; the periodic autosave still covers other settings. Imported images are managed independently of the original files. Saved scenes render on startup even without a connected phone. An atomic workspace backup retains the preceding valid layout and its image assets for recovery.
 
+Static image overlays are cached at their actual scene size using high-quality interpolation and alpha compositing. Moving an image reuses its pixels; changing its image, opacity or size refreshes the cache. The original image is retained. The header reports **Camera FPS** for newly rendered main-camera frames and **Scene FPS** for scene composition, so repeated camera frames no longer look like a healthy camera stream. See [performance checks](docs/PERFORMANCE.md).
+
 ## Updates
 
 LensioStudio checks GitHub on startup and offers to install a newer stable version. You can also check from the tray menu → **Check for app updates**. The header button shows **Checking for updates...** while checking GitHub over HTTPS. Only the Windows EXE is downloaded. Its length and SHA-256 must match GitHub release metadata; oversized, truncated or changed downloads are rejected. The layout must save successfully before the app closes safely and opens the verified **LensioStudio Setup** with the current installation folder selected. Choose **Install and open** to replace the EXE atomically and reopen the studio. Setup rechecks the hash and runs without elevation. Keep the app in a user-writable folder. These installers are not code-signed.

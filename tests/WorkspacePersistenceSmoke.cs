@@ -74,13 +74,17 @@ class WorkspacePersistenceSmoke {
   try{
    Call(reopened,"ComposeDevices");
    if(!reopened.IsHandleCreated)Check((int)Get(reopened,"previewRefreshPending")==0,"Pre-handle refresh blocked future paints");
-   reopened.Show();Pump(120);Call(reopened,"StopDeviceComposition");
-   var frame=(Bitmap)Get(reopened,"currentFrame");Check(frame!=null,"Offline restored sources were never composed");
-   Check(frame.GetPixel(320,230).G>150,"Restored image is not visible before selecting Sources");
+   reopened.Show();Pump(120);
+   lock(Get(reopened,"frameLock")){
+    var frame=(Bitmap)Get(reopened,"currentFrame");Check(frame!=null,"Offline restored sources were never composed");
+    Check(frame.GetPixel(320,230).G>150,"Restored image is not visible before selecting Sources");
+   }
    var restoredScene=(ObsScene)Get(reopened,"scene");
    Check(restoredScene.LayerCount==2,"Offline image/text were not restored");
    Call(reopened,"HandlePhoneConnected",new PhoneDeviceInfo{Id="new-phone",Name="New phone",Host=""});
+   Check(restoredScene.GetLayersSnapshot().Exists(l=>l.DeviceId=="new-phone"),"Camera connection was not exercised");
    Check(restoredScene.GetLayersSnapshot()[0].Type!=SourceType.Camera,"Automatic camera connection covered saved overlays");
+   Call(reopened,"StopDeviceComposition");
   }finally{Cleanup(reopened);}
   Console.WriteLine("PASS automatic save, restart restore, managed images, order, properties, filters, phone identity/controls, deletion and corrupt-file recovery");return 0;
  }

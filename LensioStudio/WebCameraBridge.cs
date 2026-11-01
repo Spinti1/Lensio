@@ -27,7 +27,7 @@ namespace ApexCam
         private readonly Dictionary<string,Device> devices=new Dictionary<string,Device>();
         private readonly HashSet<TcpClient> requests=new HashSet<TcpClient>();
         private TcpListener listener; private volatile bool running;
-        private readonly int videoPort; private readonly string token,pairingRoom,hostProof; private int port;
+        private int videoPort; private readonly string token,pairingRoom,hostProof; private int port;
         private System.Threading.Timer watchdog;
         [DllImport("kernel32.dll",SetLastError=true)] private static extern bool SetHandleInformation(IntPtr h,uint mask,uint flags);
         public WebCameraBridge(int videoPort,string pairingDirectory=null) {
@@ -42,10 +42,14 @@ namespace ApexCam
         }
         private static void rngFill(byte[] bytes){using(var rng=RandomNumberGenerator.Create())rng.GetBytes(bytes);}
         public string ReceiverUrl {get{return "http://127.0.0.1:"+port+"/receiver#token="+token;}}
-        public string PairingLink {get{return "https://spinti1.github.io/Lensio/?v=6#room="+pairingRoom;}}
+        public static string PairingUrl(string room){return "https://spinti1.github.io/Lensio/?v=6#room="+room;}
+        public string PairingLink {get{return PairingUrl(pairingRoom);}}
+        public bool IsRunning {get{return running;}}
+        public void SetVideoPort(int value){if(running||value<1||value>65535)throw new InvalidOperationException("Invalid receiver port.");videoPort=value;}
         public string EngineUrl {get{return "http://127.0.0.1:"+port+"/engine#token="+token+"&room="+pairingRoom+"&host="+hostProof;}}
         public void Start(){
             if(running)return;
+            if(videoPort<1||videoPort>65535)throw new InvalidOperationException("Camera receiver is not ready.");
             listener=new TcpListener(IPAddress.Loopback,0);SetHandleInformation(listener.Server.Handle,1,0);
             listener.Start(8);port=((IPEndPoint)listener.LocalEndpoint).Port;running=true;
             new Thread(Accept){IsBackground=true,Name="Lensio-web-loopback"}.Start();

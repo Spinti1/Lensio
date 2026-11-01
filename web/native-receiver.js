@@ -1,14 +1,12 @@
 import {AutoConnect} from './auto-connect.js?v=6';
 import {gatherIce} from './protocol.js';
-import qrcode from './qrcode.js';
 const params=new URLSearchParams(location.hash.slice(1)),token=params.get('token'),room=params.get('room'),hostProof=params.get('host');
 const endpoint='https://lensio-connect.pex-am.workers.dev';
 const session=crypto.randomUUID(),peers=new Map(),retryAt=new Map();let available=[],closed=false,discovery;
 const post=value=>window.chrome?.webview?.postMessage(value);
 const status=text=>post({kind:'status',text});
 if(!token||!room||!/^[a-f0-9]{64}$/.test(room))throw new Error('Missing native receiver credentials.');
-const link='https://spinti1.github.io/Lensio/?v=6#room='+room;
-const qr=qrcode(0,'M');qr.addData(link);qr.make();post({kind:'qr',data:qr.createDataURL(4,16)});
+post({kind:'engine-ready'});
 async function bridge(path,data,headers={}){
   const response=await fetch(path,{method:'POST',headers:{Authorization:'Bearer '+token,'X-Session':session,...headers},body:data,cache:'no-store',signal:AbortSignal.timeout(7000)});
   if(!response.ok)throw new Error('Local camera receiver unavailable ('+response.status+').');
@@ -69,7 +67,7 @@ async function connect(device){
 discovery=new AutoConnect({endpoint,room,hostProof,role:'host',name:'LensioStudio',onDevices:devices=>{available=devices;for(const device of devices)connect(device);},
   onAnswer:async(answer,id)=>{const p=peers.get(id);if(p&&!p.stopped)await p.pc.setRemoteDescription(answer);},
   onGone:id=>{if(id)remove(id);},onStatus:status,
-  onDiagnostic:text=>{if(text.startsWith('Discovery online')){report();post({kind:'ready',capture:typeof MediaStreamTrackProcessor==='function'?'track-processor':'worker-track-processor'});}}
+  onDiagnostic:text=>{if(text.startsWith('Discovery online')){report();post({kind:'ready',capture:typeof MediaStreamTrackProcessor==='function'?'track-processor':'worker-track-processor'});}else status(text);}
 });
 const retries=setInterval(()=>{for(const device of available)connect(device);},5000);
 addEventListener('pagehide',()=>{closed=true;clearInterval(retries);discovery.close();for(const id of [...peers.keys()])remove(id);});

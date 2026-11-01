@@ -17,6 +17,8 @@ Use the [latest stable release](https://github.com/Spinti1/Lensio/releases/lates
 
 On a small window, select **Scan QR** in the panel header; click the QR to enlarge it. The website runs only on the phones, with just a camera preview, Start camera & connect, and Stop. Keep the phones on the same Wi-Fi, with their camera page visible and screen on. Android's native LensioCam app still connects automatically over Wi-Fi or USB (ADB). Web-camera video is received by an internal Microsoft WebView2 engine; Windows 10/11 with the Evergreen WebView2 Runtime is required. The normal four-camera limit applies across native and web phones together.
 
+The QR is generated locally by LensioStudio before the video receiver starts; it does not need WebView2, a browser download or an internet request. Web-camera reception still needs Microsoft WebView2 and internet access for discovery. If the receiver cannot start, click the connection status below the QR for details and retry. Right-click the QR → **Install / repair Microsoft WebView2...** runs the bundled signed Microsoft bootstrapper after confirmation. Startup failures have time limits and explicit messages instead of leaving an endless QR-loading label.
+
 The phone remembers the paired PC after a successful connection. Opening the normal [LensioCam Web](https://spinti1.github.io/Lensio/) page and pressing Start reconnects to that PC; scanning another PC's QR selects a different PC. This preview supports video; microphone and PC audio remain native Android features. See [setup, limitations and privacy](docs/WEB_CAMERA.md).
 
 ## Get started

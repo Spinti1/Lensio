@@ -1,4 +1,4 @@
-qrcode-generator 2.0.4
+qrcode-generator 2.0.4 (JavaScript and adapted native C# pairing encoder)
 Copyright (c) 2009 Kazuhiko Arase
 Source: https://github.com/kazuhikoarase/qrcode-generator
 

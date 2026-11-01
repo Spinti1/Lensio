@@ -38,21 +38,26 @@ namespace ApexCam {
         public event Action<Bitmap> QrReady;
         public event Action Ready;
         public string CaptureMode {get;private set;}
+        private static async Task Deadline(Task task,int milliseconds){if(await Task.WhenAny(task,Task.Delay(milliseconds))!=task)throw new TimeoutException("Web receiver startup timed out. Click connection status to retry.");await task;}
         public async Task StartAsync(Form owner,string url,string profileDirectory){
-            WebReceiverRuntime.Initialize();
-            view=new WebView2 {Location=new Point(-4,-4),Size=new Size(2,2),TabStop=false};owner.Controls.Add(view);view.SendToBack();
             try {
+                string room=null;foreach(string part in new Uri(url).Fragment.TrimStart('#').Split('&'))if(part.StartsWith("room="))room=part.Substring(5);
+                if(room!=null&&System.Text.RegularExpressions.Regex.IsMatch(room,"\\A[a-f0-9]{64}\\z")&&QrReady!=null)QrReady(PairingQrCode.Render(WebCameraBridge.PairingUrl(room)));
+                WebReceiverRuntime.Initialize();
+                view=new WebView2 {Location=new Point(-4,-4),Size=new Size(2,2),TabStop=false};owner.Controls.Add(view);view.SendToBack();
                 bool missingRuntime=false;
                 try {CoreWebView2Environment.GetAvailableBrowserVersionString();}
                 catch(WebView2RuntimeNotFoundException){missingRuntime=true;}
                 if(missingRuntime){
                     if(MessageBox.Show(owner,"Install Microsoft WebView2 to receive iPhone and web cameras? The installer needs internet access.","Lensio web camera setup",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes)throw new InvalidOperationException("WebView2 is required for web cameras. Native Android cameras remain available.");
+                    if(Status!=null)Status("Installing Microsoft WebView2...");
                     if(!await Task.Run(()=>BundledSetup.InstallWebViewRuntime()))throw new InvalidOperationException("WebView2 installation did not complete. Restart LensioStudio to retry.");
                 }
                 var options=new CoreWebView2EnvironmentOptions();
-                var environment=await CoreWebView2Environment.CreateAsync(null,profileDirectory,options);
+                var environmentTask=CoreWebView2Environment.CreateAsync(null,profileDirectory,options);
+                await Deadline(environmentTask,30000);var environment=await environmentTask;
                 if(stopped)return;
-                await view.EnsureCoreWebView2Async(environment);
+                await Deadline(view.EnsureCoreWebView2Async(environment),30000);
                 if(stopped)return;
                 view.CoreWebView2.Settings.AreDevToolsEnabled=false;
                 view.CoreWebView2.Settings.AreDefaultContextMenusEnabled=false;
@@ -64,23 +69,21 @@ namespace ApexCam {
                 view.CoreWebView2.NewWindowRequested+=(s,e)=>e.Handled=true;
                 var expected=new Uri(url);
                 view.CoreWebView2.NavigationStarting+=(s,e)=>{Uri next;if(!Uri.TryCreate(e.Uri,UriKind.Absolute,out next)||next.Scheme!=expected.Scheme||next.Authority!=expected.Authority||next.AbsolutePath!="/engine")e.Cancel=true;};
+                var loaded=new TaskCompletionSource<bool>();
                 view.CoreWebView2.WebMessageReceived+=(s,e)=>{
                     try {
                         var data=new JavaScriptSerializer {MaxJsonLength=512*1024}.Deserialize<System.Collections.Generic.Dictionary<string,object>>(e.WebMessageAsJson);
                         string kind=Convert.ToString(data["kind"]);
-                        if(kind=="status"){if(Status!=null)Status(Convert.ToString(data["text"]));}
+                        if(kind=="engine-ready"){loaded.TrySetResult(true);}
+                        else if(kind=="status"){if(Status!=null)Status(Convert.ToString(data["text"]));}
                         else if(kind=="ready"){object capture;if(data.TryGetValue("capture",out capture))CaptureMode=Convert.ToString(capture);if(Ready!=null)Ready();}
-                        else if(kind=="qr"){
-                            string encoded=Convert.ToString(data["data"]);int comma=encoded.IndexOf(',');if(comma<0)return;
-                            using(var m=new MemoryStream(Convert.FromBase64String(encoded.Substring(comma+1))))using(var image=Image.FromStream(m)){
-                                var bitmap=new Bitmap(image);if(QrReady!=null)QrReady(bitmap);else bitmap.Dispose();
-                            }
-                        }
                     }catch{if(Status!=null)Status("Web receiver sent invalid status information.");}
                 };
                 view.CoreWebView2.ProcessFailed+=(s,e)=>{if(Status!=null)Status("Web receiver stopped. Restart LensioStudio to reconnect web phones.");};
+                view.CoreWebView2.NavigationCompleted+=(s,e)=>{if(!e.IsSuccess)loaded.TrySetException(new InvalidOperationException("Web receiver page failed: "+e.WebErrorStatus));};
                 view.CoreWebView2.Navigate(url);
-            }catch(Exception e){if(!stopped&&Status!=null)Status("Web receiver unavailable: "+e.Message);}
+                await Deadline(loaded.Task,15000);
+            }catch(Exception e){if(!stopped&&Status!=null)Status("Web receiver unavailable: "+e.Message);Dispose();}
         }
         public void Dispose(){stopped=true;if(view!=null){view.Dispose();view=null;}}
     }

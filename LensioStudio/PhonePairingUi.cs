@@ -12,6 +12,7 @@ namespace ApexCam {
         private Label pairingQrStatus;
         private Bitmap pairingQrImage;
         private bool showPairingQr=true;
+        private bool webReceiverStarting;private int webReceiverGeneration;private string pairingConnectionDetails="Starting phone connection...";
         private sealed class PairingQrCanvas : Panel {
             public PairingQrCanvas(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
         }
@@ -22,6 +23,8 @@ namespace ApexCam {
             qrCanvas=new PairingQrCanvas{Dock=DockStyle.Fill,BackColor=ColorCardBg,Cursor=Cursors.Hand};
             qrCanvas.Paint+=(s,e)=>DrawPairingQr(e.Graphics,qrCanvas.ClientRectangle);
             qrCanvas.Click+=(s,e)=>ShowPairingQrLarge();
+            pairingQrStatus.Cursor=Cursors.Hand;pairingQrStatus.Click+=(s,e)=>ShowPairingConnectionDetails();
+            var repairMenu=new ContextMenuStrip();repairMenu.Items.Add("Connection details / retry...",null,(s,e)=>ShowPairingConnectionDetails());repairMenu.Items.Add("Install / repair Microsoft WebView2...",null,(s,e)=>RepairWebReceiverRuntime());ApplyMenuTheme(repairMenu);qrCanvas.ContextMenuStrip=repairMenu;qrCanvas.Disposed+=(s,e)=>repairMenu.Dispose();
             pairingQrPanel.Controls.Add(qrCanvas);pairingQrPanel.Controls.Add(title);pairingQrPanel.Controls.Add(pairingQrStatus);
             qrViewButton=CreateModernButton("Camera",ColorButtonDark,0,3,76,22);
             qrViewButton.Click+=(s,e)=>{showPairingQr=!showPairingQr;LayoutPhoneCards(Math.Max(180,ctrlContent.ClientSize.Width-8));};
@@ -30,7 +33,7 @@ namespace ApexCam {
             Disposed+=(s,e)=>{if(embeddedWebReceiver!=null)embeddedWebReceiver.Dispose();if(pairingQrImage!=null)pairingQrImage.Dispose();};
         }
         private void DrawPairingQr(Graphics graphics,Rectangle bounds){
-            if(pairingQrImage==null){TextRenderer.DrawText(graphics,"QR is starting...",Font,bounds,ColorTextSecondary,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
+            if(pairingQrImage==null){TextRenderer.DrawText(graphics,"Pairing QR unavailable. Click status for details.",Font,bounds,ColorTextSecondary,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
             // The generator uses four pixels per module, including the quiet zone.
             // Integer module sizes keep small QR codes sharp and scannable.
             graphics.Clear(ColorCardBg);
@@ -60,13 +63,39 @@ namespace ApexCam {
                 qrViewButton.SetBounds(Math.Max(8,dockControls.ClientSize.Width-84),3,76,22);qrViewButton.BringToFront();
             }
         }
+        private void SetPairingStatus(string text){
+            if(IsDisposed)return;pairingConnectionDetails=text;pairingQrStatus.Text=text;sourceToolTips.SetToolTip(pairingQrStatus,text+"\nClick for details and retry.");
+        }
+        private void SetPairingQr(Bitmap image){var previous=pairingQrImage;pairingQrImage=image;LayoutPhoneCards(Math.Max(180,ctrlContent.ClientSize.Width-8));if(previous!=null)previous.Dispose();qrCanvas.Invalidate();}
+        private void InitializePairingConnection(){
+            try{if(webCameraBridge==null)webCameraBridge=new WebCameraBridge(0,workspaceDirectory);SetPairingQr(PairingQrCode.Render(webCameraBridge.PairingLink));SetPairingStatus("Starting web receiver...");}
+            catch(Exception e){SetPairingStatus("Pairing unavailable: "+e.Message);}
+        }
+        private void ShowPairingConnectionDetails(){
+            bool retry=MessageBox.Show(this,pairingConnectionDetails+"\n\nRetry the web receiver? The QR is generated locally; web-camera reception requires Microsoft WebView2 and internet access for discovery.","Phone connection",MessageBoxButtons.YesNo,MessageBoxIcon.Information)==DialogResult.Yes;
+            if(retry){if(webCameraBridge==null)InitializePairingConnection();StartEmbeddedReceiver();}
+        }
+        private async void RepairWebReceiverRuntime(){
+            if(webReceiverStarting||IsDisposed)return;
+            if(MessageBox.Show(this,"Install or repair Microsoft WebView2? The signed Microsoft installer needs internet access and runs for this Windows user.","Web camera setup",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes)return;
+            webReceiverStarting=true;bool installed=false;
+            try{SetPairingStatus("Installing Microsoft WebView2...");installed=await System.Threading.Tasks.Task.Run(()=>BundledSetup.InstallWebViewRuntime());if(!installed)SetPairingStatus("WebView2 setup did not complete. Check internet access and retry.");}
+            catch(Exception error){SetPairingStatus("WebView2 setup failed: "+error.Message);}
+            finally{webReceiverStarting=false;}
+            if(installed&&!IsDisposed)StartEmbeddedReceiver();
+        }
         private async void StartEmbeddedReceiver(){
+            if(webReceiverStarting||IsDisposed)return;
+            if(webCameraBridge==null||!webCameraBridge.IsRunning){SetPairingStatus("Camera receiver unavailable. Restart LensioStudio and check whether another app is using port 8556.");return;}
+            webReceiverStarting=true;int generation=++webReceiverGeneration;
             try {
+                if(embeddedWebReceiver!=null)embeddedWebReceiver.Dispose();
                 embeddedWebReceiver=new EmbeddedWebReceiver();
-                embeddedWebReceiver.Status+=text=>{if(IsDisposed)return;pairingQrStatus.Text=text;sourceToolTips.SetToolTip(pairingQrStatus,text);};
-                embeddedWebReceiver.QrReady+=image=>{var previous=pairingQrImage;pairingQrImage=image;LayoutPhoneCards(Math.Max(180,ctrlContent.ClientSize.Width-8));if(previous!=null)previous.Dispose();qrCanvas.Invalidate();};
+                embeddedWebReceiver.Status+=text=>{if(!IsDisposed&&generation==webReceiverGeneration)SetPairingStatus(text);};
+                SetPairingStatus("Starting web receiver...");
                 await embeddedWebReceiver.StartAsync(this,webCameraBridge.EngineUrl,Path.Combine(workspaceDirectory,"web-receiver"));
-            }catch(Exception e){pairingQrStatus.Text="Web receiver unavailable";sourceToolTips.SetToolTip(pairingQrStatus,e.Message+"\nMicrosoft Edge WebView2 Runtime is required.");}
+            }catch(Exception e){if(!IsDisposed)SetPairingStatus("Web receiver unavailable: "+e.Message);}
+            finally{webReceiverStarting=false;}
         }
     }
 }

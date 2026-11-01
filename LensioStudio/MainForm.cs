@@ -293,6 +293,7 @@ namespace ApexCam
             ComposeDevices();
             RequestPreviewRefresh();
             RestoreLocalCameras();
+            InitializePairingConnection();
             SafeBeginInvoke(CheckVirtualCameraSetup);
 
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
@@ -1829,14 +1830,15 @@ namespace ApexCam
                 receiver.OnDeviceFrameReceived += ProcessDeviceFrame;
 
                 receiver.Start();
-                try { webCameraBridge=new WebCameraBridge(receiver.BoundPort,workspaceDirectory);webCameraBridge.Start();
+                try { if(webCameraBridge==null)webCameraBridge=new WebCameraBridge(receiver.BoundPort,workspaceDirectory);else webCameraBridge.SetVideoPort(receiver.BoundPort);webCameraBridge.Start();
                     SafeBeginInvoke(()=>StartEmbeddedReceiver());
                 }
-                catch { if(webCameraBridge!=null)webCameraBridge.Dispose();webCameraBridge=null; }
+                catch(Exception webError) { if(webCameraBridge!=null)webCameraBridge.Dispose();webCameraBridge=null;SafeBeginInvoke(()=>SetPairingStatus("Web receiver unavailable: "+webError.Message)); }
                 try { AdbTunnel.SetupPortForwarding(); } catch { }
             }
             catch (Exception ex)
             {
+                SafeBeginInvoke(()=>SetPairingStatus("Camera receiver unavailable: "+ex.Message));
                 try { File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), DateTime.Now + " - InitializeEngine FATAL: " + ex.ToString() + "\n"); } catch { }
             }
         }

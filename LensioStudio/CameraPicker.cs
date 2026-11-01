@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading;
@@ -44,6 +44,7 @@ namespace ApexCam
         }
         private void RefreshCameraCatalog(bool showMenu)
         {
+            if(IsLocalCamera(controlledDeviceId)){cameraPicker.Text="PC / laptop webcam";return;}
             if(!showMenu && cameraMenu!=null && cameraMenu.Visible) return;
             if(controlledDeviceId!=null && controlledDeviceId.StartsWith("web:")) {
                 var webCatalog=webCameraBridge==null?null:webCameraBridge.GetCatalog(controlledDeviceId);

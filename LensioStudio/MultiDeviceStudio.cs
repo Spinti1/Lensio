@@ -24,6 +24,7 @@ namespace ApexCam
         private Panel phoneCards;
         private System.Threading.Timer compositionTimer;
         private int composing;
+        private Bitmap compositionSpare;
         private sealed class ActualFrameRate {
             private readonly object gate=new object();private long started=System.Diagnostics.Stopwatch.GetTimestamp(),last;private int count,rate;
             public void Tick(){lock(gate){long now=System.Diagnostics.Stopwatch.GetTimestamp();last=now;count++;long elapsed=now-started;if(elapsed>=System.Diagnostics.Stopwatch.Frequency){rate=(int)Math.Round(count*(double)System.Diagnostics.Stopwatch.Frequency/elapsed);count=0;started=now;}}}
@@ -44,7 +45,7 @@ namespace ApexCam
             InitializePhonePairingUi();
             compositionTimer=new System.Threading.Timer(_ => ComposeDevices(),null,33,33);
             Disposed += (s,e) => StopDeviceComposition();
-            Disposed += (s,e) => {lock(frameLock){if(previewScaler!=null)previewScaler.Dispose();previewSource=null;}};
+            Disposed += (s,e) => {lock(frameLock){if(previewScaler!=null)previewScaler.Dispose();previewSource=null;if(compositionSpare!=null){compositionSpare.Dispose();compositionSpare=null;}if(currentFrame!=null){currentFrame.Dispose();currentFrame=null;}}};
         }
         private void StopDeviceComposition() {
             compositionStopped=true;
@@ -105,6 +106,11 @@ namespace ApexCam
         {
             PhoneSlot slot;lock(devicesGate){if(!phoneSlots.TryGetValue(id,out slot))return;}
             controlledDeviceId=id;
+            bool local=IsLocalCamera(id);btnTorch.Enabled=tbZoom.Enabled=btnToggleMic.Enabled=btnTogglePcAudio.Enabled=!local;
+            if(IsLocalCamera(id)){
+                connectedPhoneHost=null;cameraCatalogGeneration++;selectedLayer=slot.Layer;
+                cameraPicker.Text="PC / laptop webcam";RefreshSourcesList();RefreshPhoneCards();return;
+            }
             if(receiver!=null)receiver.ActiveDeviceId=id;
             connectedPhoneHost=slot.Connected?slot.Info.Host:null;
             txtPhoneIp.Text=slot.Info.Host;
@@ -175,8 +181,8 @@ namespace ApexCam
                 menu.Items.Add("Camera / lens...",null,(s,e) => {
                     SelectControlledPhone(slot.Info.Id);
                     RefreshCameraCatalog(true);
-                }).Enabled=slot.Connected;
-                var resolution=new ToolStripMenuItem("Capture resolution") {Enabled=slot.Connected};
+                }).Enabled=slot.Connected && !IsLocalCamera(slot.Info.Id);
+                var resolution=new ToolStripMenuItem("Capture resolution") {Enabled=slot.Connected && !IsLocalCamera(slot.Info.Id)};
                 resolution.DropDownItems.Add("720p HD",null,(s,e) => SendPhoneControl(slot.Info.Id,"{\"resolution\":\"720p\"}"));
                 resolution.DropDownItems.Add("1080p Full HD",null,(s,e) => SendPhoneControl(slot.Info.Id,"{\"resolution\":\"1080p\"}"));
                 menu.Items.Add(resolution);
@@ -204,7 +210,7 @@ namespace ApexCam
             lock(devicesGate) {if(!phoneSlots.TryGetValue(id,out slot) || slot.Connected)return;}
             if(id==mainDeviceId)MakeSecondaryPhone(id);
             lock(devicesGate)phoneSlots.Remove(id);
-            if(!slot.Layer.IsDisposed)scene.RemoveLayer(slot.Layer);
+            if(!slot.Layer.IsDisposed)RemoveSource(slot.Layer);
             if(mainDeviceId==id)mainDeviceId=null;
             if(controlledDeviceId==id) {
                 controlledDeviceId=null;connectedPhoneHost=null;
@@ -259,7 +265,9 @@ namespace ApexCam
                 int count=scene.LayerCount;
                 if(count==0 && !hasSceneComposition)return;
                 hasSceneComposition=count>0;
-                image=new Bitmap(currentResWidth,currentResHeight,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                image=compositionSpare;compositionSpare=null;
+                if(image!=null&&(image.Width!=currentResWidth||image.Height!=currentResHeight)){image.Dispose();image=null;}
+                if(image==null)image=new Bitmap(currentResWidth,currentResHeight,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 using(var g=Graphics.FromImage(image)) {g.Clear(Color.Black);scene.RenderScene(g,image.Width,image.Height);}
                 if(compositionStopped)return;
                 if(isVirtualCamActive && vcamBridge!=null)vcamBridge.WriteFrame(image);
@@ -272,7 +280,7 @@ namespace ApexCam
                         if(revision>=0 && revision!=measuredMainRevision){measuredMainRevision=revision;cameraFrameRate.Tick();}
                     }
                 }
-                lock(frameLock){var old=currentFrame;currentFrame=image;image=null;if(old!=null)old.Dispose();}
+                lock(frameLock){compositionSpare=currentFrame;currentFrame=image;currentFrameRevision++;image=null;}
                 RequestPreviewRefresh();
             } catch(Exception) { /* Connection teardown must not terminate the compositor. */ }
             finally {if(image!=null)image.Dispose();Interlocked.Exchange(ref composing,0);}
@@ -288,19 +296,22 @@ namespace ApexCam
             if(isFullscreen)return;
             var canvas=CanvasToScreenRect(new RectangleF(0,0,1920,1080));
             using(var pen=new Pen(Color.FromArgb(170,160,176,196),1f))g.DrawRectangle(pen,canvas.X,canvas.Y,canvas.Width-1,canvas.Height-1);
-            if(isDraggingLayer && (snapCenterX||snapCenterY))using(var guide=new Pen(ColorAccentCyan,1.5f)){
-                if(snapCenterX)g.DrawLine(guide,canvas.X+canvas.Width/2,canvas.Top,canvas.X+canvas.Width/2,canvas.Bottom);
-                if(snapCenterY)g.DrawLine(guide,canvas.Left,canvas.Y+canvas.Height/2,canvas.Right,canvas.Y+canvas.Height/2);
+            if(isDraggingLayer && (!float.IsNaN(snapGuideX)||!float.IsNaN(snapGuideY)))using(var guide=new Pen(ColorAccentCyan,1.5f)){
+                if(!float.IsNaN(snapGuideX)){float x=canvas.X+snapGuideX*canvas.Width/1920;g.DrawLine(guide,x,canvas.Top,x,canvas.Bottom);}
+                if(!float.IsNaN(snapGuideY)){float y=canvas.Y+snapGuideY*canvas.Height/1080;g.DrawLine(guide,canvas.Left,y,canvas.Right,y);}
             }
             if(selectedLayer==null || selectedLayer.Type!=SourceType.Camera)return;
-            var bounds=CanvasToScreenRect(selectedLayer.GetBounds());
+            var bounds=selectedLayer.VisibleBounds;
             var state=g.Save();g.SetClip(canvas);
             using(var pen=new Pen(Color.FromArgb(160,255,255,255),1f)) {
                 pen.DashStyle=DashStyle.Dash;
                 for(int i=1;i<3;i++){
                     float x=bounds.X+bounds.Width*i/3,y=bounds.Y+bounds.Height*i/3;
-                    g.DrawLine(pen,x,bounds.Top,x,bounds.Bottom);
-                    g.DrawLine(pen,bounds.Left,y,bounds.Right,y);
+                    PointF a=selectedLayer.RotatePoint(new PointF(x,bounds.Top),false),b=selectedLayer.RotatePoint(new PointF(x,bounds.Bottom),false);
+                    PointF c=selectedLayer.RotatePoint(new PointF(bounds.Left,y),false),d=selectedLayer.RotatePoint(new PointF(bounds.Right,y),false);
+                    a=CanvasToScreenRect(new RectangleF(a,SizeF.Empty)).Location;b=CanvasToScreenRect(new RectangleF(b,SizeF.Empty)).Location;
+                    c=CanvasToScreenRect(new RectangleF(c,SizeF.Empty)).Location;d=CanvasToScreenRect(new RectangleF(d,SizeF.Empty)).Location;
+                    g.DrawLine(pen,a,b);g.DrawLine(pen,c,d);
                 }
             }
             g.Restore(state);

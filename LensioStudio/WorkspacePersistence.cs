@@ -12,6 +12,8 @@ namespace ApexCam {
         public SourceType Type;
         public bool Visible=true,Locked,ShowBackground=true;
         public float X,Y,Width=320,Height=180,Opacity=1,FontSize=26;
+        public float Rotation,CropLeft,CropTop,CropRight,CropBottom;
+        public int VisibilityShortcut;
         public int TextColor=Color.White.ToArgb(),BgColor=Color.Black.ToArgb(),BorderColor=Color.Cyan.ToArgb(),SolidColor=Color.Gray.ToArgb();
     }
     public sealed class SavedWorkspace {
@@ -83,6 +85,7 @@ namespace ApexCam {
             foreach(var layer in scene.GetLayersSnapshot()) {
                 if(layer.IsDisposed)continue;
                 var source=new SavedSource {Id=layer.Id,Name=layer.Name,Type=layer.Type,DeviceId=layer.DeviceId,
+                    Rotation=layer.Rotation,CropLeft=layer.CropLeft,CropTop=layer.CropTop,CropRight=layer.CropRight,CropBottom=layer.CropBottom,VisibilityShortcut=layer.VisibilityShortcut,
                     X=layer.X,Y=layer.Y,Width=layer.Width,Height=layer.Height,Opacity=layer.Opacity,Visible=layer.Visible,Locked=layer.Locked,
                     Text=layer.TextContent,FontSize=layer.FontSize,ClockFormat=layer.ClockFormat,ShowBackground=layer.ShowBackground,
                     TextColor=layer.TextColor.ToArgb(),BgColor=layer.BgColor.ToArgb(),BorderColor=layer.BorderColor.ToArgb(),SolidColor=layer.SolidColor.ToArgb(),ImagePath=layer.ImagePath};
@@ -94,7 +97,7 @@ namespace ApexCam {
             return state;
         }
         private void SaveWorkspace() {
-            if(!workspaceReady)return;
+            if(!workspaceReady || isDraggingLayer)return;
             try {
                 var state=CaptureWorkspace();string json=workspaceJson.Serialize(state);
                 if(json==lastWorkspaceJson)return;
@@ -128,9 +131,11 @@ namespace ApexCam {
                 var s=state.Sources[i];if(s==null || !Enum.IsDefined(typeof(SourceType),s.Type))continue;
                 var layer=new ObsLayer {Id=string.IsNullOrEmpty(s.Id)?Guid.NewGuid().ToString():s.Id,Name=s.Name??"Source",Type=s.Type,DeviceId=s.DeviceId,
                     X=SafeFloat(s.X,0,-16384,16384),Y=SafeFloat(s.Y,0,-16384,16384),Width=SafeFloat(s.Width,320,1,8192),Height=SafeFloat(s.Height,180,1,8192),
+                    Rotation=SafeFloat(s.Rotation,0,-360,360),CropLeft=SafeFloat(s.CropLeft,0,0,.99f),CropTop=SafeFloat(s.CropTop,0,0,.99f),CropRight=SafeFloat(s.CropRight,0,0,.99f),CropBottom=SafeFloat(s.CropBottom,0,0,.99f),VisibilityShortcut=s.VisibilityShortcut,
                     Opacity=SafeFloat(s.Opacity,1,0,1),Visible=s.Visible,Locked=s.Locked,TextContent=s.Text??"",FontSize=SafeFloat(s.FontSize,26,8,200),
                     ClockFormat=s.ClockFormat??"HH:mm:ss",ShowBackground=s.ShowBackground,TextColor=Color.FromArgb(s.TextColor),BgColor=Color.FromArgb(s.BgColor),
                     BorderColor=Color.FromArgb(s.BorderColor),SolidColor=Color.FromArgb(s.SolidColor),ImagePath=s.ImagePath};
+                layer.CropRight=Math.Min(layer.CropRight,.99f-layer.CropLeft);layer.CropBottom=Math.Min(layer.CropBottom,.99f-layer.CropTop);
                 if(s.Type==SourceType.Image) {
                     try {
                         if(string.IsNullOrEmpty(s.Asset) || s.Asset!=Path.GetFileName(s.Asset))throw new InvalidDataException("Invalid image asset");
@@ -155,6 +160,7 @@ namespace ApexCam {
         }
         private void SendPhoneControl(string payload){SendPhoneControl(controlledDeviceId,payload);}
         private void SendPhoneControl(string id,string payload) {
+            if(IsLocalCamera(id))return;
             if(!string.IsNullOrEmpty(id)) {
                 try {
                     var values=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(payload);
@@ -202,7 +208,7 @@ namespace ApexCam {
                 receiver.SendControl(id,"{\"toggleTorch\":true}");
         }
         private void RestoreAudioPreferences(string id) {
-            if(id!=null && id.StartsWith("web:"))return;
+            if(IsLocalCamera(id) || (id!=null && id.StartsWith("web:")))return;
             if(id!=mainDeviceId)return;
             if(restorePcAudioPending && !isPcAudioStreaming)TogglePcAudio();
             if(restoreMicPending && !isMicStreaming)ToggleMic();

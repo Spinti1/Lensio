@@ -66,7 +66,11 @@ class WorkspacePersistenceSmoke {
   offlineScene.AddLayer(new ObsLayer{Type=SourceType.Text,Name="Offline title",TextContent="Visible without a phone",X=10,Y=10,Width=500,Height=60});
   var titleLayer=offlineScene.GetLayersSnapshot().Find(l=>l.Type==SourceType.Text);
   Set(offline,"selectedLayer",titleLayer);Call(offline,"RefreshSourcesList");
-  foreach(Control control in ((Panel)Get(offline,"propContentPanel")).Controls)if(control is TextBox)((TextBox)control).Text="Edited and saved immediately";
+  // Properties are created only while their dialog is open; exercise the real edit path.
+  using(var editTimer=new System.Windows.Forms.Timer{Interval=50}){
+   editTimer.Tick+=(sender,args)=>{var dialog=(Form)Get(offline,"sourcePropertiesWindow");if(dialog==null)return;editTimer.Stop();foreach(Control control in ((Panel)Get(offline,"propContentPanel")).Controls)if(control is TextBox)((TextBox)control).Text="Edited and saved immediately";dialog.Close();};
+   editTimer.Start();Call(offline,"ShowSourceProperties");
+  }
   var immediate=new JavaScriptSerializer().Deserialize<SavedWorkspace>(File.ReadAllText(Path.Combine(offlineFolder,"workspace.json")));
   Check(immediate.Sources.Exists(l=>l.Text=="Edited and saved immediately"),"Text edit was not saved immediately");
   Cleanup(offline);File.Delete(original);

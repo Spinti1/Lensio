@@ -2,10 +2,11 @@
 
 **Your Android cameras. One Windows studio.**
 
-LensioCam turns Android phones into wireless webcams. LensioStudio brings them together in a compact Windows studio with movable sources, image overlays, live filters and automatic workspace saving.
+LensioCam turns Android phones into wireless webcams. LensioStudio brings phones and PC webcams together in a compact Windows studio with movable sources, image overlays, live filters and automatic workspace saving.
 
 - Use up to four phones over Wi-Fi or USB (ADB).
-- Drag and resize camera sources, add images, text and clocks.
+- Add a built-in laptop camera or USB webcam alongside your phones.
+- Move, crop, rotate and align sources; add images, text and clocks.
 - Use **LensioCam** as a virtual camera in Discord, browsers and other video apps.
 - Keep streaming with the phone screen off; stop explicitly from the app or notification.
 - Get updates from GitHub Releases with SHA-256 integrity checks.
@@ -31,7 +32,17 @@ Windows 10/11 x64 and Android 8+ are required. The single Windows EXE embeds the
 
 The native Android camera follows the phone's physical orientation, including portrait, landscape and upside-down. Camera capture remains bound while orientation changes; the sensor is stopped when the camera service is released. The Windows camera source adjusts its aspect ratio around its current center while overlays stay on the scene canvas. Web-phone sources also follow the dimensions received from the browser.
 
-Dragging a source near either scene-center axis snaps it exactly into alignment and shows cyan guides. Hold **Alt** to move freely, or disable **Image → Snap to center**. The setting is saved with your workspace.
+Use **Sources → Add → PC / laptop webcam...** to choose a Windows webcam. Each selected webcam opens once, shares the existing scene compositor and reconnects from the saved workspace. Removing its source or closing LensioStudio releases capture. Windows camera privacy settings apply; no administrator permission is needed. LensioCam's own virtual output and OBS Virtual Camera are excluded to prevent direct feedback. Webcam frames stay local and are not JPEG-encoded or sent through the phone network protocol. Capture requests a supported mode near the current studio resolution and 30 FPS; actual delivery depends on the camera, driver and exposure conditions.
+
+Drag a source to move it. Magnetic guides align visible edges and centers with the canvas and other visible sources. Resize handles also align edges on unrotated sources; camera corners preserve their aspect ratio. Snap targets are collected once at drag start, with no network polling or per-move saves. Hold **Alt** while moving to bypass snapping, or disable **Image → Magnetic snapping**.
+
+Hold **Alt** while starting a handle drag to crop the source instead of scaling it. Cropping is nondestructive. Right-click a source → **Transform** provides fit, center, clockwise/counterclockwise rotation, a custom rotation angle, crop reset and lock/unlock. The outline and hit testing follow rotation and the visible crop.
+
+- **Ctrl+Shift+H:** show/hide the selected source.
+- **Ctrl+R / Ctrl+Shift+R:** rotate the selected source clockwise/counterclockwise by 90 degrees.
+- **Visibility shortcut...** in a source's context menu assigns a separate Ctrl/Alt shortcut to that element. Conflicts are rejected; holding the shortcut does not toggle repeatedly. These shortcuts work while LensioStudio is focused and do not intercept text editing.
+
+Rotation, crop and visibility shortcuts are saved with the workspace. Common transforms live in one context submenu rather than being repeated in image/camera properties.
 
 Image/text additions and property edits save immediately; the periodic autosave still covers other settings. Imported images are managed independently of the original files. Saved scenes render on startup even without a connected phone. An atomic workspace backup retains the preceding valid layout and its image assets for recovery.
 

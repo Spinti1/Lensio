@@ -152,7 +152,7 @@ namespace ApexCam
             BottomRight
         }
         private TransformHandle activeHandle = TransformHandle.None;
-        private bool snapToCenter=true,snapCenterX,snapCenterY;
+        private bool snapToCenter=true;
         private bool isDraggingLayer = false;
         private PointF dragStartMouse = PointF.Empty;
         private RectangleF dragStartBounds = RectangleF.Empty;
@@ -292,6 +292,7 @@ namespace ApexCam
             Interlocked.Exchange(ref previewRefreshPending,0);
             ComposeDevices();
             RequestPreviewRefresh();
+            RestoreLocalCameras();
             SafeBeginInvoke(CheckVirtualCameraSetup);
 
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
@@ -319,6 +320,8 @@ namespace ApexCam
             this.StartPosition = FormStartPosition.CenterScreen;
             this.KeyPreview = true;
             this.KeyDown += OnFormKeyDown;
+            this.KeyUp += (s,e)=>shortcutHeld=Keys.None;
+            this.Deactivate += (s,e)=>shortcutHeld=Keys.None;
 
             // 1. TOP STATUS BAR (Battery, IP, Connect, Quick VCam)
             BuildTopBar();
@@ -610,6 +613,7 @@ namespace ApexCam
             previewPanel.MouseDown += OnPreviewMouseDown;
             previewPanel.MouseMove += OnPreviewMouseMove;
             previewPanel.MouseUp += OnPreviewMouseUp;
+            previewPanel.MouseCaptureChanged += (s,e)=>{if(isDraggingLayer&&!previewPanel.Capture)OnPreviewMouseUp(previewPanel,new MouseEventArgs(MouseButtons.Left,1,0,0,0));};
 
             // Floating quick toolbar directly underneath video monitor
             quickBarPanel = new Panel
@@ -747,7 +751,7 @@ namespace ApexCam
             menuAddSource.ForeColor = ColorTextPrimary;
             menuAddSource.Font = new Font("Segoe UI", 9.5f);
 
-            var itemImage = new ToolStripMenuItem(" Image (Image / Logo)", null, (s, e) =>
+            var itemImage = new ToolStripMenuItem("Image / logo...", null, (s, e) =>
             {
                 using (OpenFileDialog ofd = new OpenFileDialog())
                 {
@@ -759,7 +763,7 @@ namespace ApexCam
                     }
                 }
             });
-            var itemText = new ToolStripMenuItem(" Text (GDI+)", null, (s, e) =>
+            var itemText = new ToolStripMenuItem("Text", null, (s, e) =>
             {
                 ObsLayer textLayer = new ObsLayer
                 {
@@ -776,7 +780,7 @@ namespace ApexCam
                 selectedLayer = textLayer;
                 RefreshSourcesList();
             });
-            var itemClock = new ToolStripMenuItem(" Live Digital Clock", null, (s, e) =>
+            var itemClock = new ToolStripMenuItem("Clock", null, (s, e) =>
             {
                 ObsLayer clockLayer = new ObsLayer
                 {
@@ -793,7 +797,7 @@ namespace ApexCam
                 selectedLayer = clockLayer;
                 RefreshSourcesList();
             });
-            var itemColor = new ToolStripMenuItem(" Color Source (Color Source)", null, (s, e) =>
+            var itemColor = new ToolStripMenuItem("Color source", null, (s, e) =>
             {
                 ObsLayer colorLayer = new ObsLayer
                 {
@@ -810,6 +814,7 @@ namespace ApexCam
                 RefreshSourcesList();
             });
 
+            menuAddSource.Items.Add("PC / laptop webcam...",null,(s,e)=>ShowLocalCameraPicker());
             menuAddSource.Items.Add(itemImage);
             menuAddSource.Items.Add(itemText);
             menuAddSource.Items.Add(itemClock);
@@ -831,7 +836,7 @@ namespace ApexCam
             {
                 if (selectedLayer != null)
                 {
-                    scene.RemoveLayer(selectedLayer);
+                    RemoveSource(selectedLayer);
                     selectedLayer = null;
                     RefreshSourcesList();
                 }
@@ -1005,7 +1010,7 @@ namespace ApexCam
 
         private void UpdatePropertiesDock()
         {
-            if (propContentPanel == null) return;
+            if (propContentPanel == null || sourcePropertiesWindow==null) return;
             while (propContentPanel.Controls.Count > 0) propContentPanel.Controls[0].Dispose();
             propContentPanel.Visible = selectedLayer != null;
 
@@ -1046,7 +1051,7 @@ namespace ApexCam
             {
                 Location = new Point(4, y),
                 Width = w,
-                Minimum = 5,
+                Minimum = 0,
                 Maximum = 100,
                 Value = (int)(selectedLayer.Opacity * 100),
                 TickFrequency = 10,
@@ -1061,14 +1066,7 @@ namespace ApexCam
             propContentPanel.Controls.Add(tbOp);
             y += 30;
 
-            if (selectedLayer.Type == SourceType.Camera)
-            {
-                var fit=CreateModernButton("Fit camera to canvas",ColorButtonDark,4,y,w,28);
-                fit.Click += (s,e) => { selectedLayer.SetBounds(new RectangleF(0,0,1920,1080)); CommitSceneEdit(); };
-                propContentPanel.Controls.Add(fit);
-                y+=32;
-            }
-            else if (selectedLayer.Type == SourceType.Image)
+            if (selectedLayer.Type == SourceType.Image)
             {
                 Button btnChangeImg = CreateModernButton(" Replace Image...", ColorButtonDark, 4, y, w, 28);
                 btnChangeImg.Click += (s, e) =>
@@ -1093,15 +1091,6 @@ namespace ApexCam
                 propContentPanel.Controls.Add(btnChangeImg);
                 y += 32;
 
-                Button btnCenter = CreateModernButton(" Center in Frame", ColorButtonDark, 4, y, w, 28);
-                btnCenter.Click += (s, e) =>
-                {
-                    selectedLayer.X = (1920 - selectedLayer.Width) / 2;
-                    selectedLayer.Y = (1080 - selectedLayer.Height) / 2;
-                    if (previewPanel != null) CommitSceneEdit();
-                };
-                propContentPanel.Controls.Add(btnCenter);
-                y += 32;
             }
             else if (selectedLayer.Type == SourceType.Text)
             {
@@ -1584,16 +1573,15 @@ namespace ApexCam
             float canvasX, canvasY;
             ScreenToCanvasCoords(e.X, e.Y, out canvasX, out canvasY);
 
-            if (selectedLayer != null)
+            if (selectedLayer != null && !selectedLayer.Locked)
             {
-                RectangleF sRect = CanvasToScreenRect(selectedLayer.GetBounds());
-                TransformHandle handle = HitTestHandles(e.Location, sRect);
+                RectangleF sRect = CanvasToScreenRect(selectedLayer.VisibleBounds);
+                TransformHandle handle = HitTestHandles(LocalHandlePoint(e.Location), sRect);
                 if (handle != TransformHandle.None && handle != TransformHandle.Body)
                 {
                     activeHandle = handle;
                     isDraggingLayer = true;
-                    dragStartMouse = new PointF(canvasX, canvasY);
-                    dragStartBounds = selectedLayer.GetBounds();
+                    BeginSourceDrag(canvasX,canvasY);
                     return;
                 }
             }
@@ -1604,8 +1592,7 @@ namespace ApexCam
                 selectedLayer = hit;
                 activeHandle = TransformHandle.Body;
                 isDraggingLayer = true;
-                dragStartMouse = new PointF(canvasX, canvasY);
-                dragStartBounds = selectedLayer.GetBounds();
+                BeginSourceDrag(canvasX,canvasY);
                 RefreshSourcesList();
             }
             else
@@ -1625,6 +1612,7 @@ namespace ApexCam
             {
                 float dx = canvasX - dragStartMouse.X;
                 float dy = canvasY - dragStartMouse.Y;
+                if(activeHandle!=TransformHandle.Body){double a=-selectedLayer.Rotation*Math.PI/180;float rx=(float)(dx*Math.Cos(a)-dy*Math.Sin(a));dy=(float)(dx*Math.Sin(a)+dy*Math.Cos(a));dx=rx;}
 
                 RectangleF newB = dragStartBounds;
 
@@ -1670,28 +1658,51 @@ namespace ApexCam
                         break;
                 }
 
-                if(selectedLayer.Type==SourceType.Camera &&
+                if(!croppingDrag && selectedLayer.Type==SourceType.Camera &&
                     (activeHandle==TransformHandle.TopLeft || activeHandle==TransformHandle.TopRight ||
                      activeHandle==TransformHandle.BottomLeft || activeHandle==TransformHandle.BottomRight)) {
                     newB.Height=newB.Width * dragStartBounds.Height / Math.Max(1,dragStartBounds.Width);
                     if(activeHandle==TransformHandle.TopLeft || activeHandle==TransformHandle.TopRight)
                         newB.Y=dragStartBounds.Bottom-newB.Height;
                 }
-                snapCenterX=snapCenterY=false;
-                if(activeHandle==TransformHandle.Body && snapToCenter && (ModifierKeys&Keys.Alt)==0){
-                    var canvas=CanvasToScreenRect(new RectangleF(0,0,1920,1080));
-                    float threshold=8f*1920/Math.Max(1,canvas.Width);
-                    newB=SnapToCanvasCenter(newB,threshold,out snapCenterX,out snapCenterY);
+                snapGuideX=snapGuideY=float.NaN;
+                if(croppingDrag){
+                    // Restore the original crop each move; pointer deltas are relative to mouse-down.
+                    selectedLayer.CropLeft=dragCropLeft;selectedLayer.CropTop=dragCropTop;selectedLayer.CropRight=dragCropRight;selectedLayer.CropBottom=dragCropBottom;
+                    selectedLayer.CropTo(newB);
+                }else{
+                    if(snapToCenter && (ModifierKeys&Keys.Alt)==0 && activeHandle==TransformHandle.Body){
+                        var canvas=CanvasToScreenRect(new RectangleF(0,0,1920,1080));float threshold=8f*1920/Math.Max(1,canvas.Width);
+                        selectedLayer.SetVisibleBounds(newB);var visual=selectedLayer.VisualBounds;
+                        var snapped=MagneticSnap(visual,snapTargets,threshold,out snapGuideX,out snapGuideY);
+                        newB.Offset(snapped.X-visual.X,snapped.Y-visual.Y);
+                    }
+                    if(snapToCenter&&(ModifierKeys&Keys.Alt)==0&&activeHandle!=TransformHandle.Body&&selectedLayer.Rotation==0){
+                        var canvas=CanvasToScreenRect(new RectangleF(0,0,1920,1080));float threshold=8f*1920/Math.Max(1,canvas.Width);
+                        bool left=activeHandle==TransformHandle.TopLeft||activeHandle==TransformHandle.MidLeft||activeHandle==TransformHandle.BottomLeft;
+                        bool right=activeHandle==TransformHandle.TopRight||activeHandle==TransformHandle.MidRight||activeHandle==TransformHandle.BottomRight;
+                        bool top=activeHandle==TransformHandle.TopLeft||activeHandle==TransformHandle.TopCenter||activeHandle==TransformHandle.TopRight;
+                        bool bottom=activeHandle==TransformHandle.BottomLeft||activeHandle==TransformHandle.BottomCenter||activeHandle==TransformHandle.BottomRight;
+                        if(selectedLayer.Type!=SourceType.Camera||!(left||right)||!(top||bottom)){
+                            var point=new RectangleF(left?newB.Left:newB.Right,top?newB.Top:newB.Bottom,0,0);
+                            var snapped=MagneticSnap(point,snapTargets,threshold,out snapGuideX,out snapGuideY);
+                            if(left&&snapped.X<newB.Right-20)newB=RectangleF.FromLTRB(snapped.X,newB.Top,newB.Right,newB.Bottom);
+                            if(right&&snapped.X>newB.Left+20)newB.Width=snapped.X-newB.Left;
+                            if(top&&snapped.Y<newB.Bottom-20)newB=RectangleF.FromLTRB(newB.Left,snapped.Y,newB.Right,newB.Bottom);
+                            if(bottom&&snapped.Y>newB.Top+20)newB.Height=snapped.Y-newB.Top;
+                            if(!left&&!right)snapGuideX=float.NaN;if(!top&&!bottom)snapGuideY=float.NaN;
+                        }
+                    }
+                    selectedLayer.SetVisibleBounds(newB);
                 }
-                selectedLayer.SetBounds(newB);
                 previewPanel.Invalidate();
                 return;
             }
 
-            if (selectedLayer != null)
+            if (selectedLayer != null && !selectedLayer.Locked)
             {
-                RectangleF sRect = CanvasToScreenRect(selectedLayer.GetBounds());
-                TransformHandle handle = HitTestHandles(e.Location, sRect);
+                RectangleF sRect = CanvasToScreenRect(selectedLayer.VisibleBounds);
+                TransformHandle handle = HitTestHandles(LocalHandlePoint(e.Location), sRect);
                 switch (handle)
                 {
                     case TransformHandle.TopLeft:
@@ -1721,9 +1732,9 @@ namespace ApexCam
 
         private void OnPreviewMouseUp(object sender, MouseEventArgs e)
         {
-            isDraggingLayer = false;
+            isDraggingLayer = false;croppingDrag=false;snapTargets=null;snapGuideX=snapGuideY=float.NaN;previewPanel.Capture=false;
             activeHandle = TransformHandle.None;
-            snapCenterX=snapCenterY=false;
+
             CommitSceneEdit();
         }
 
@@ -1869,7 +1880,7 @@ namespace ApexCam
             lock (frameLock)
             {
                 oldFrame = currentFrame;
-                currentFrame = processed;
+                currentFrame = processed;currentFrameRevision++;
             }
             if (oldFrame != null)
             {
@@ -1898,107 +1909,25 @@ namespace ApexCam
             });
         }
 
+        private long currentFrameRevision,previewFrameRevision=-1;
         public void RenderPreview(Graphics g, int width, int height)
         {
-            lock (frameLock)
-            {
-                if (currentFrame != null)
-                {
-                    try
-                    {
-                        float scale = Math.Min((float)width / currentFrame.Width, (float)height / currentFrame.Height);
-                        int drawW = (int)(currentFrame.Width * scale);
-                        int drawH = (int)(currentFrame.Height * scale);
-                        int drawX = (width - drawW) / 2;
-                        int drawY = (height - drawH) / 2;
-
-                        if (drawX > 0)
-                        {
-                            g.FillRectangle(Brushes.Black, 0, 0, drawX, height);
-                            g.FillRectangle(Brushes.Black, drawX + drawW, 0, width - (drawX + drawW), height);
-                        }
-                        if (drawY > 0)
-                        {
-                            g.FillRectangle(Brushes.Black, 0, 0, width, drawY);
-                            g.FillRectangle(Brushes.Black, 0, drawY + drawH, width, height - (drawY + drawH));
-                        }
-
-                        g.InterpolationMode = InterpolationMode.Bilinear;
-                        g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
-                        g.SmoothingMode = SmoothingMode.HighSpeed;
-                        g.CompositingQuality = CompositingQuality.HighSpeed;
-
-                        if(drawW>0 && drawH>0) {
-                            if(previewScaler==null)previewScaler=new CameraFrameScaler();
-                            if(!object.ReferenceEquals(previewSource,currentFrame) || previewScaler.Output==null ||
-                                previewScaler.Output.Width!=drawW || previewScaler.Output.Height!=drawH) {
-                                previewScaler.Scale(currentFrame,drawW,drawH,1f);
-                                previewSource=currentFrame;
-                            }
-                            g.DrawImageUnscaled(previewScaler.Output,drawX,drawY);
-                        }
-
-                        DrawCameraGuides(g);
-
-                        // Draw OBS Red Bounding Box & 8 Handles on PC monitor only!
-                        if (selectedLayer != null && !isFullscreen && selectedLayer.Visible)
-                        {
-                            RectangleF sRect = CanvasToScreenRect(selectedLayer.GetBounds());
-                            using (Pen redPen = new Pen(ColorAccentRed, 2f))
-                            {
-                                g.DrawRectangle(redPen, sRect.X, sRect.Y, sRect.Width, sRect.Height);
-                            }
-
-                            const float hSize = 8f;
-                            PointF[] handlePts = new PointF[]
-                            {
-                                new PointF(sRect.Left, sRect.Top),
-                                new PointF(sRect.Left + sRect.Width/2, sRect.Top),
-                                new PointF(sRect.Right, sRect.Top),
-                                new PointF(sRect.Left, sRect.Top + sRect.Height/2),
-                                new PointF(sRect.Right, sRect.Top + sRect.Height/2),
-                                new PointF(sRect.Left, sRect.Bottom),
-                                new PointF(sRect.Left + sRect.Width/2, sRect.Bottom),
-                                new PointF(sRect.Right, sRect.Bottom)
-                            };
-
-                            using (SolidBrush hBrush = new SolidBrush(Color.White))
-                            using (Pen hPen = new Pen(ColorAccentRed, 1.5f))
-                            {
-                                foreach (var pt in handlePts)
-                                {
-                                    RectangleF rH = new RectangleF(pt.X - hSize/2, pt.Y - hSize/2, hSize, hSize);
-                                    g.FillRectangle(hBrush, rH);
-                                    g.DrawRectangle(hPen, rH.X, rH.Y, rH.Width, rH.Height);
-                                }
-                            }
-                        }
-
-                        return;
+            if(width<=0||height<=0)return;
+            g.Clear(Color.Black);
+            float scale=Math.Min(width/1920f,height/1080f);int dw=(int)(1920*scale),dh=(int)(1080*scale),x=(width-dw)/2,y=(height-dh)/2;
+            // Drawing handles never waits behind the compositor or a source's image lock.
+            bool entered=System.Threading.Monitor.TryEnter(frameLock);
+            if(entered)try{
+                if(currentFrame!=null&&dw>0&&dh>0){
+                    if(previewScaler==null)previewScaler=new CameraFrameScaler();
+                    if(previewFrameRevision!=currentFrameRevision || !object.ReferenceEquals(previewSource,currentFrame) || previewScaler.Output==null || previewScaler.Output.Width!=dw || previewScaler.Output.Height!=dh){
+                        previewScaler.Scale(currentFrame,dw,dh,1f);previewSource=currentFrame;previewFrameRevision=currentFrameRevision;
                     }
-                    catch { return; }
                 }
-            }
-
-            if (isConnected) return;
-
-            g.Clear(ColorBgObsidian);
-            using (SolidBrush textBrush = new SolidBrush(ColorTextSecondary))
-            using (SolidBrush accentBrush = new SolidBrush(ColorAccentLightCyan))
-            using (Font titleFont = new Font("Segoe UI", 15, FontStyle.Bold))
-            using (Font subFont = new Font("Segoe UI", 10))
-            {
-                string title = "LensioStudio";
-                string sub = "Open LensioCam on your phone.\nConnect over Wi-Fi or USB.";
-                using (var format = new StringFormat { Alignment = StringAlignment.Center,
-                    LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter })
-                {
-                    if (height >= 50)
-                        g.DrawString(title, titleFont, accentBrush, new RectangleF(8, Math.Max(0, height / 2 - 45), Math.Max(1, width - 16), 32), format);
-                    if (height >= 130)
-                        g.DrawString(sub, subFont, textBrush, new RectangleF(12, height / 2 - 8, Math.Max(1, width - 24), 60), format);
-                }
-            }
+            }finally{System.Threading.Monitor.Exit(frameLock);}
+            if(previewScaler!=null&&previewScaler.Output!=null)g.DrawImageUnscaled(previewScaler.Output,x,y);
+            else using(var brush=new SolidBrush(ColorAccentLightCyan))using(var font=new Font("Segoe UI",15,FontStyle.Bold))g.DrawString("LensioStudio",font,brush,16,16);
+            DrawSelection(g);
         }
 
         // ==========================================
@@ -2143,6 +2072,7 @@ namespace ApexCam
 
         private void OnFormKeyDown(object sender, KeyEventArgs e)
         {
+            if(HandleSourceShortcut(e))return;
             if (e.KeyCode == Keys.F11)
             {
                 ToggleFullscreen();
@@ -2155,7 +2085,7 @@ namespace ApexCam
             }
             else if (e.KeyCode == Keys.Delete && selectedLayer != null && !(ActiveControl is TextBoxBase))
             {
-                scene.RemoveLayer(selectedLayer);
+                RemoveSource(selectedLayer);
                 selectedLayer = null;
                 RefreshSourcesList();
                 e.Handled = true;
@@ -2167,7 +2097,7 @@ namespace ApexCam
         // ==========================================
         private void TogglePcAudio()
         {
-            if(!isPcAudioStreaming && mainDeviceId!=null && mainDeviceId.StartsWith("web:"))return;
+            if(!isPcAudioStreaming && (IsLocalCamera(mainDeviceId)||(mainDeviceId!=null && mainDeviceId.StartsWith("web:"))))return;
             restorePcAudioPending=false;
             isPcAudioStreaming = !isPcAudioStreaming;
             if (isPcAudioStreaming)
@@ -2223,7 +2153,7 @@ namespace ApexCam
 
         private void ToggleMic()
         {
-            if(!isMicStreaming && mainDeviceId!=null && mainDeviceId.StartsWith("web:"))return;
+            if(!isMicStreaming && (IsLocalCamera(mainDeviceId)||(mainDeviceId!=null && mainDeviceId.StartsWith("web:"))))return;
             restoreMicPending=false;
             isMicStreaming = !isMicStreaming;
             if (isMicStreaming)
@@ -2455,8 +2385,10 @@ namespace ApexCam
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             if(workspaceSaveTimer!=null)workspaceSaveTimer.Stop();
+            isDraggingLayer=false;if(previewPanel!=null)previewPanel.Capture=false;
             SaveWorkspace();
             StopDeviceComposition();
+            StopLocalCameras();
             Cleanup(() => { if (heartbeatTimer != null) { heartbeatTimer.Stop(); heartbeatTimer.Dispose(); } });
             // Closing the desktop releases local workers; phones keep their foreground camera session
             // and reconnect automatically when LensioStudio opens again.

@@ -67,6 +67,25 @@ namespace ApexCam
         public float Width { get; set; }
         public float Height { get; set; }
         public float Opacity { get; set; }
+        public float Rotation { get; set; }
+        public float CropLeft { get; set; }
+        public float CropTop { get; set; }
+        public float CropRight { get; set; }
+        public float CropBottom { get; set; }
+        public int VisibilityShortcut { get; set; }
+        public RectangleF VisibleBounds { get { return new RectangleF(X+Width*CropLeft,Y+Height*CropTop,Width*Math.Max(.01f,1-CropLeft-CropRight),Height*Math.Max(.01f,1-CropTop-CropBottom)); } }
+        public PointF RotatePoint(PointF p,bool inverse) {
+            double a=Rotation*Math.PI/180*(inverse?-1:1),c=Math.Cos(a),s=Math.Sin(a);
+            float x=p.X-X-Width/2,y=p.Y-Y-Height/2;
+            return new PointF(X+Width/2+(float)(x*c-y*s),Y+Height/2+(float)(x*s+y*c));
+        }
+        public PointF[] VisibleCorners() { var b=VisibleBounds;return new[]{RotatePoint(new PointF(b.Left,b.Top),false),RotatePoint(new PointF(b.Right,b.Top),false),RotatePoint(new PointF(b.Right,b.Bottom),false),RotatePoint(new PointF(b.Left,b.Bottom),false)}; }
+        public RectangleF VisualBounds { get {var points=VisibleCorners();float l=points[0].X,r=l,t=points[0].Y,b=t;foreach(var p in points){l=Math.Min(l,p.X);r=Math.Max(r,p.X);t=Math.Min(t,p.Y);b=Math.Max(b,p.Y);}return RectangleF.FromLTRB(l,t,r,b);} }
+        public void SetVisibleBounds(RectangleF b){float fw=b.Width/Math.Max(.01f,1-CropLeft-CropRight),fh=b.Height/Math.Max(.01f,1-CropTop-CropBottom);SetBounds(new RectangleF(b.X-fw*CropLeft,b.Y-fh*CropTop,fw,fh));}
+        public void CropTo(RectangleF b) {
+            CropLeft=Math.Max(0,Math.Min(.99f,(b.Left-X)/Math.Max(1,Width)));CropRight=Math.Max(0,Math.Min(.99f-CropLeft,(X+Width-b.Right)/Math.Max(1,Width)));
+            CropTop=Math.Max(0,Math.Min(.99f,(b.Top-Y)/Math.Max(1,Height)));CropBottom=Math.Max(0,Math.Min(.99f-CropTop,(Y+Height-b.Bottom)/Math.Max(1,Height)));
+        }
 
         // Specific to Image
         public Image BitmapImage { get; set; }
@@ -92,7 +111,7 @@ namespace ApexCam
             Visible = true;
             Locked = false;
             Opacity = 1.0f;
-            TextContent = "Apex Streamer";
+            TextContent = "Lensio";
             FontSize = 26f;
             TextColor = Color.White;
             BgColor = Color.FromArgb(210, 15, 23, 42);
@@ -392,8 +411,7 @@ namespace ApexCam
                 {
                     if (l.Visible && !l.Locked)
                     {
-                        if (canvasX >= l.X && canvasX <= l.X + l.Width &&
-                            canvasY >= l.Y && canvasY <= l.Y + l.Height)
+                        if (l.VisibleBounds.Contains(l.RotatePoint(new PointF(canvasX,canvasY),true)))
                         {
                             return l;
                         }
@@ -409,6 +427,14 @@ namespace ApexCam
             {
                 for(int i=layers.Count-1;i>=0;i--) {
                     var layer=layers[i];
+                    if(!layer.Visible || layer.IsDisposed)continue;
+                    GraphicsState transformed=null;
+                    if(layer.Rotation!=0 || layer.CropLeft!=0 || layer.CropTop!=0 || layer.CropRight!=0 || layer.CropBottom!=0){
+                        transformed=g.Save();float sx=canvasW/1920f,sy=canvasH/1080f;
+                        g.ScaleTransform(sx,sy);g.TranslateTransform(layer.X+layer.Width/2,layer.Y+layer.Height/2);g.RotateTransform(layer.Rotation);g.TranslateTransform(-layer.X-layer.Width/2,-layer.Y-layer.Height/2);
+                        g.SetClip(layer.VisibleBounds,CombineMode.Intersect);g.ScaleTransform(1/sx,1/sy);
+                    }
+                    try {
                     if(layer.Type==SourceType.Camera) {
                         layer.RenderCamera(g,canvasW/1920f,canvasH/1080f);
                     } else if(layer.Type==SourceType.Image) {
@@ -418,6 +444,7 @@ namespace ApexCam
                         try {g.ScaleTransform(canvasW/1920f,canvasH/1080f);layer.Render(g,1920,1080);}
                         finally {g.Restore(state);}
                     }
+                    } finally {if(transformed!=null)g.Restore(transformed);}
                 }
             }
         }

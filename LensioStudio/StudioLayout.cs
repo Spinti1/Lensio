@@ -104,7 +104,7 @@ namespace ApexCam
             var actions = new ToolStripDropDownButton("Image");
             actions.DropDownItems.Add("Mirror", null, (s,e) => { mirrorH = !mirrorH; });
             actions.DropDownItems.Add("Flip", null, (s,e) => { flipV = !flipV; });
-            var snap=new ToolStripMenuItem("Snap to center (Alt to bypass)"){CheckOnClick=true,Checked=snapToCenter};
+            var snap=new ToolStripMenuItem("Magnetic snapping (Alt to bypass)"){CheckOnClick=true,Checked=snapToCenter};
             snap.CheckedChanged+=(s,e)=>{snapToCenter=snap.Checked;CommitSceneEdit();};
             actions.DropDownOpening+=(s,e)=>snap.Checked=snapToCenter;
             actions.DropDownItems.Add(snap);
@@ -195,8 +195,9 @@ namespace ApexCam
             });
             sourceContextMenu.Items.Add("Remove", null, (s,e) => {
                 if (selectedLayer == null) return;
-                scene.RemoveLayer(selectedLayer); selectedLayer = null; RefreshSourcesList();
+                RemoveSource(selectedLayer); selectedLayer = null; RefreshSourcesList();
             });
+            InitializeTransformMenu();
             ApplyMenuTheme(sourceContextMenu);
             lbSources.MouseDown += (s,e) => {
                 if (e.Button != MouseButtons.Right) return;
@@ -384,6 +385,7 @@ namespace ApexCam
         private void RefreshStudioStatus()
         {
             if (streamStatus == null) return;
+            if(IsLocalCamera(mainDeviceId)){streamStatus.Text=string.Format("Camera {0} FPS | Scene {1} FPS | {2}x{3} | Webcam",cameraFrameRate.Value,sceneFrameRate.Value,currentResWidth,currentResHeight);return;}
             if(isConnected && mainDeviceId!=null && mainDeviceId.StartsWith("web:")) {
                 streamStatus.Text=string.Format("Camera {0} FPS | Scene {1} FPS | {2}x{3} | Web",cameraFrameRate.Value,sceneFrameRate.Value,currentResWidth,currentResHeight);return;
             }

@@ -29,7 +29,6 @@ namespace ApexCam {
    }finally{if(File.Exists(temporary))File.Delete(temporary);}
   }
   public static void Run(string folder,int parentId,string hash){
-   if(new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)){MessageBox.Show("Open LensioStudio without administrator rights to install app updates.","LensioStudio Setup");return;}
    if(parentId<=0||parentId==Process.GetCurrentProcess().Id||!Regex.IsMatch(hash??"",@"\A[0-9a-fA-F]{64}\z")){MessageBox.Show("Invalid setup request.","LensioStudio Setup");return;}
    folder=Path.GetFullPath(folder);
    Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
@@ -46,7 +45,7 @@ namespace ApexCam {
       bool exited=await Task.Run(()=>{try{using(var parent=Process.GetProcessById(parentId))return parent.WaitForExit(30000);}catch(ArgumentException){return true;}});
       if(dialog.IsDisposed)return;if(!exited)throw new IOException("LensioStudio is still running. Close it and retry the update.");
       if(!GitHubRelease.Verify(Application.ExecutablePath,hash))throw new InvalidDataException("Setup integrity verification failed");
-      install.Enabled=true;status.Text="Ready to install in the current folder. Administrator rights are not requested.";
+      install.Enabled=true;status.Text="Ready to install in the current folder. Setup uses the permissions already available.";
      }catch(Exception error){if(!dialog.IsDisposed)status.Text=error.Message;}
     };
     install.Click+=async(s,e)=>{

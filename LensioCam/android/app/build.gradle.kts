@@ -12,8 +12,8 @@ android {
         applicationId = "com.apexcam"
         minSdk = 26
         targetSdk = 34
-        versionCode = 35
-        versionName = "2.10.2"
+        versionCode = 36
+        versionName = "2.10.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

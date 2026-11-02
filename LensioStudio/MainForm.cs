@@ -44,6 +44,14 @@ namespace ApexCam
     // Custom ComboBox that drops MouseWheel selection changes unless popup list is open
     public class NoWheelComboBox : ComboBox
     {
+        public NoWheelComboBox(){DrawMode=DrawMode.OwnerDrawFixed;FlatStyle=FlatStyle.Flat;BackColor=Color.FromArgb(34,45,68);ForeColor=Color.White;}
+        protected override void OnDrawItem(DrawItemEventArgs e){
+            using(var brush=new SolidBrush((e.State&DrawItemState.Selected)!=0?Color.FromArgb(66,105,235):BackColor))e.Graphics.FillRectangle(brush,e.Bounds);
+            string text=e.Index>=0?GetItemText(Items[e.Index]):Text;
+            TextRenderer.DrawText(e.Graphics,text,Font,new Rectangle(e.Bounds.X+5,e.Bounds.Y,e.Bounds.Width-10,e.Bounds.Height),Enabled?ForeColor:Color.Gray,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+            e.DrawFocusRectangle();
+        }
+
         protected override void WndProc(ref Message m)
         {
             const int WM_MOUSEWHEEL = 0x020A;
@@ -228,14 +236,14 @@ namespace ApexCam
         private System.Windows.Forms.Timer heartbeatTimer;
 
         // Obsidian & Sapphire Studio Theme
-        private static readonly Color ColorBgObsidian = Color.FromArgb(24, 25, 28);
-        private static readonly Color ColorHeaderBg = Color.FromArgb(33, 35, 39);
-        private static readonly Color ColorDockBg = Color.FromArgb(37, 39, 43);
-        private static readonly Color ColorCardBg = Color.FromArgb(43, 45, 49);
-        private static readonly Color ColorCardBorder = Color.FromArgb(61, 64, 70);
-        private static readonly Color ColorButtonDark = Color.FromArgb(54, 57, 63);
-        private static readonly Color ColorAccentCyan = Color.FromArgb(14, 165, 233);
-        private static readonly Color ColorAccentLightCyan = Color.FromArgb(56, 189, 248);
+        private static readonly Color ColorBgObsidian = Color.FromArgb(10, 14, 25);
+        private static readonly Color ColorHeaderBg = Color.FromArgb(17, 23, 39);
+        private static readonly Color ColorDockBg = Color.FromArgb(19, 26, 43);
+        private static readonly Color ColorCardBg = Color.FromArgb(23, 31, 50);
+        private static readonly Color ColorCardBorder = Color.FromArgb(48, 61, 85);
+        private static readonly Color ColorButtonDark = Color.FromArgb(34, 45, 68);
+        private static readonly Color ColorAccentCyan = Color.FromArgb(66, 105, 235);
+        private static readonly Color ColorAccentLightCyan = Color.FromArgb(111, 183, 255);
         private static readonly Color ColorAccentEmerald = Color.FromArgb(16, 185, 129);
         private static readonly Color ColorAccentAmber = Color.FromArgb(245, 158, 11);
         private static readonly Color ColorAccentRed = Color.FromArgb(239, 68, 68);
@@ -313,7 +321,7 @@ namespace ApexCam
 
         private void InitializeComponent()
         {
-            this.Text = "LensioStudio — Mini OBS Virtual Camera & Audio Engine";
+            this.Text = "LensioStudio";
             this.Size = new Size(1400, 890);
             this.MinimumSize = new Size(1180, 720);
             this.BackColor = ColorBgObsidian;
@@ -804,7 +812,7 @@ namespace ApexCam
                 {
                     Name = "Color Source",
                     Type = SourceType.ColorBox,
-                    SolidColor = Color.FromArgb(180, 14, 165, 233),
+                    SolidColor = Color.FromArgb(180, 66, 105, 235),
                     X = 100,
                     Y = 300,
                     Width = 300,
@@ -1041,7 +1049,7 @@ namespace ApexCam
             {
                 Text = "Opacity: " + (int)(selectedLayer.Opacity * 100) + "%",
                 ForeColor = ColorTextSecondary,
-                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                 Location = new Point(4, y),
                 AutoSize = true
             };
@@ -1103,7 +1111,7 @@ namespace ApexCam
                 {
                     Text = "Text Banner:",
                     ForeColor = ColorTextSecondary,
-                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                     Location = new Point(4, y),
                     AutoSize = true
                 };
@@ -1132,7 +1140,7 @@ namespace ApexCam
                 {
                     Text = "Font Size: " + (int)selectedLayer.FontSize,
                     ForeColor = ColorTextSecondary,
-                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                     Location = new Point(4, y),
                     AutoSize = true
                 };
@@ -1164,7 +1172,7 @@ namespace ApexCam
                 {
                     Text = "Clock Format: HH:mm:ss",
                     ForeColor = ColorTextSecondary,
-                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                     Location = new Point(4, y),
                     AutoSize = true
                 };
@@ -1175,7 +1183,7 @@ namespace ApexCam
                 {
                     Text = "Clock Font Size: " + (int)selectedLayer.FontSize,
                     ForeColor = ColorTextSecondary,
-                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                     Location = new Point(4, y),
                     AutoSize = true
                 };
@@ -1226,7 +1234,7 @@ namespace ApexCam
             {
                 Text = "Video Preset:",
                 ForeColor = ColorTextSecondary,
-                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                 Location = new Point(4, y),
                 AutoSize = true
             };
@@ -1933,7 +1941,7 @@ namespace ApexCam
                 }
             }finally{System.Threading.Monitor.Exit(frameLock);}
             if(previewScaler!=null&&previewScaler.Output!=null)g.DrawImageUnscaled(previewScaler.Output,x,y);
-            else using(var brush=new SolidBrush(ColorAccentLightCyan))using(var font=new Font("Segoe UI",15,FontStyle.Bold))g.DrawString("LensioStudio",font,brush,16,16);
+            else LensioBrand.DrawNoSignal(g,new Rectangle(x,y,dw,dh));
             DrawSelection(g);
         }
 
@@ -2223,7 +2231,7 @@ namespace ApexCam
                 Cursor = Cursors.Hand,
                 Location = new Point(x, y),
                 Size = new Size(w, h),
-                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                 TextAlign = ContentAlignment.MiddleCenter
             };
             btn.FlatAppearance.BorderSize = 1;
@@ -2353,40 +2361,7 @@ namespace ApexCam
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern bool DestroyIcon(IntPtr handle);
 
-        private Icon CreateAppIcon()
-        {
-            try
-            {
-                using (Bitmap bmp = new Bitmap(32, 32))
-                using (Graphics g = Graphics.FromImage(bmp))
-                {
-                    g.SmoothingMode = SmoothingMode.AntiAlias;
-                    using (SolidBrush bg = new SolidBrush(ColorAccentCyan))
-                    {
-                        g.FillEllipse(bg, 1, 1, 30, 30);
-                    }
-                    using (SolidBrush cam = new SolidBrush(Color.White))
-                    {
-                        g.FillRectangle(cam, 7, 12, 18, 12);
-                        g.FillPolygon(cam, new Point[] { new Point(11, 12), new Point(13, 9), new Point(19, 9), new Point(21, 12) });
-                    }
-                    using (SolidBrush lens = new SolidBrush(ColorHeaderBg))
-                    {
-                        g.FillEllipse(lens, 11, 13, 10, 10);
-                    }
-                    using (SolidBrush lensCenter = new SolidBrush(ColorAccentLightCyan))
-                    {
-                        g.FillEllipse(lensCenter, 13, 15, 6, 6);
-                    }
-
-                    IntPtr hIcon = bmp.GetHicon();
-                    Icon icon = (Icon)Icon.FromHandle(hIcon).Clone();
-                    DestroyIcon(hIcon);
-                    return icon;
-                }
-            }
-            catch { return SystemIcons.Application; }
-        }
+        private Icon CreateAppIcon() { return LensioBrand.CreateIcon(); }
 
         private static void Cleanup(Action action) { try { action(); } catch { } }
         protected override void OnFormClosing(FormClosingEventArgs e)

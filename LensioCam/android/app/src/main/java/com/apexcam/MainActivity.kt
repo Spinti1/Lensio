@@ -14,6 +14,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.apexcam.service.ApexCamService
 import com.apexcam.ui.CameraScreen
@@ -41,6 +44,7 @@ class MainActivity : ComponentActivity() {
             override fun handleOnBackPressed() { moveTaskToBack(true) }
         })
         setContent {
+          MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFF8CABFF),onPrimary=Color(0xFF071329),secondary=Color(0xFFB8A0FF),background=Color(0xFF0A0E19),surface=Color(0xFF171F32))) {
             val service = streamService
             if (service == null) Text("Starting LensioCam…")
             else {
@@ -67,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     onStopStreaming={service.stopStreaming()}
                 )
             }
+          }
         }
     }
     override fun onStart() {

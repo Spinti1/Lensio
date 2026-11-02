@@ -1,5 +1,8 @@
 package com.apexcam.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.apexcam.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -39,15 +42,19 @@ fun FloatingControls(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Top Left: Status & Audio Badges
+        // Compact brand and live status
         Column(
-            modifier = Modifier.align(Alignment.TopStart),
+            modifier = Modifier.align(Alignment.TopStart).padding(top=40.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Image(painterResource(R.drawable.lensio_logo),contentDescription="Lensio",modifier=Modifier.size(40.dp))
+                Text("LensioCam",color=Color.White,fontSize=16.sp,fontWeight=FontWeight.SemiBold)
+            }
             Row(
                 modifier = Modifier
                     .background(
-                        color = Color.Black.copy(alpha = 0.75f),
+                        color = Color(0xED111727),
                         shape = RoundedCornerShape(12.dp)
                     )
                     .padding(horizontal = 12.dp, vertical = 7.dp),
@@ -136,7 +143,7 @@ fun FloatingControls(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .background(
-                    color = Color.Black.copy(alpha = 0.75f),
+                    color = Color(0xED111727),
                     shape = RoundedCornerShape(12.dp)
                 )
                 .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -161,7 +168,7 @@ fun FloatingControls(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 20.dp)
                 .background(
-                    color = Color.Black.copy(alpha = 0.75f),
+                    color = Color(0xED111727),
                     shape = RoundedCornerShape(24.dp)
                 )
                 .padding(4.dp),

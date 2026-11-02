@@ -118,8 +118,8 @@ fun CameraScreen(
                     .align(Alignment.BottomStart)
                     .padding(start = 16.dp, end = 84.dp, bottom = 24.dp)
                     .background(
-                        color = Color(0xEE0F172A),
-                        shape = RoundedCornerShape(16.dp)
+                        color = Color(0xF2171F32),
+                        shape = RoundedCornerShape(20.dp)
                     )
                     .padding(14.dp)
             ) {
@@ -147,7 +147,7 @@ fun CameraScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF38BDF8),
+                                focusedBorderColor = Color(0xFF8CABFF),
                                 unfocusedBorderColor = Color(0xFF475569)
                             )
                         )
@@ -157,7 +157,7 @@ fun CameraScreen(
                                 val target = ipInput.trim()
                                 onManualConnect(target)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4269EB)),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text("Connect", fontSize = 11.sp)
@@ -175,7 +175,7 @@ fun CameraScreen(
                     }
 
                     Text(
-                        text = "● Searching automatically. Open LensioStudio on your PC.",
+                        text = "Searching automatically. Open LensioStudio on your PC.",
                         color = Color(0xFF94A3B8),
                         fontSize = 10.5.sp
                     )
@@ -218,7 +218,7 @@ fun CameraScreen(
                     .fillMaxWidth()
                     .background(
                         color = Color(0xF20F172A),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(20.dp)
                     )
                     .padding(14.dp)
             ) {
@@ -233,7 +233,7 @@ fun CameraScreen(
                     ) {
                         Text(
                             text = "Update available (v${availableUpdate.versionName})",
-                            color = Color(0xFF38BDF8),
+                            color = Color(0xFF8CABFF),
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -275,7 +275,7 @@ fun CameraScreen(
                     } else {
                         Button(
                             onClick = onStartUpdate,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4269EB)),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(vertical = 10.dp)

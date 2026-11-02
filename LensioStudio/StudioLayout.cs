@@ -6,17 +6,17 @@ namespace ApexCam
 {
     internal sealed class StudioMenuColors : ProfessionalColorTable
     {
-        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(33,35,39); } }
-        public override Color MenuItemSelected { get { return Color.FromArgb(54,57,63); } }
-        public override Color MenuItemBorder { get { return Color.FromArgb(14,165,233); } }
-        public override Color MenuBorder { get { return Color.FromArgb(61,64,70); } }
-        public override Color SeparatorDark { get { return Color.FromArgb(61,64,70); } }
-        public override Color SeparatorLight { get { return Color.FromArgb(61,64,70); } }
+        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(17,23,39); } }
+        public override Color MenuItemSelected { get { return Color.FromArgb(34,45,68); } }
+        public override Color MenuItemBorder { get { return Color.FromArgb(66,105,235); } }
+        public override Color MenuBorder { get { return Color.FromArgb(48,61,85); } }
+        public override Color SeparatorDark { get { return Color.FromArgb(48,61,85); } }
+        public override Color SeparatorLight { get { return Color.FromArgb(48,61,85); } }
     }
 
     internal sealed class StudioMenuRenderer : ToolStripProfessionalRenderer
     {
-        private static readonly Color Background = Color.FromArgb(33,35,39);
+        private static readonly Color Background = Color.FromArgb(17,23,39);
         private static readonly Color Muted = Color.FromArgb(157,164,175);
         public StudioMenuRenderer() : base(new StudioMenuColors()) { RoundedEdges=false; }
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) {
@@ -35,7 +35,7 @@ namespace ApexCam
         }
         protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e) {
             var rect=new Rectangle(1,1,Math.Max(0,e.Item.Width-2),Math.Max(0,e.Item.Height-2));
-            using(var brush=new SolidBrush(e.Item.Selected && e.Item.Enabled ? Color.FromArgb(53,61,73) : Background))
+            using(var brush=new SolidBrush(e.Item.Selected && e.Item.Enabled ? Color.FromArgb(42,55,83) : Background))
                 e.Graphics.FillRectangle(brush,rect);
         }
         protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e) {
@@ -49,15 +49,24 @@ namespace ApexCam
 
     internal sealed class StudioButton : Button
     {
+        private bool hovered,pressed;
+        public StudioButton(){SetStyle(ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
+        protected override void OnMouseEnter(EventArgs e){hovered=true;Invalidate();base.OnMouseEnter(e);}
+        protected override void OnMouseLeave(EventArgs e){hovered=pressed=false;Invalidate();base.OnMouseLeave(e);}
+        protected override void OnMouseDown(MouseEventArgs e){pressed=true;Invalidate();base.OnMouseDown(e);}
+        protected override void OnMouseUp(MouseEventArgs e){pressed=false;Invalidate();base.OnMouseUp(e);}
         protected override void OnPaint(PaintEventArgs e) {
-            if(Enabled) { base.OnPaint(e); return; }
-            using(var brush=new SolidBrush(Color.FromArgb(44,47,53)))
-                e.Graphics.FillRectangle(brush,ClientRectangle);
-            using(var pen=new Pen(Color.FromArgb(66,70,78)))
-                e.Graphics.DrawRectangle(pen,0,0,Math.Max(0,Width-1),Math.Max(0,Height-1));
-            TextRenderer.DrawText(e.Graphics,Text,Font,ClientRectangle,Color.FromArgb(161,170,184),
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
-                TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            if(Width<3||Height<3)return;
+            e.Graphics.Clear(Parent==null?BackColor:Parent.BackColor);
+            e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            Color fill=!Enabled?Color.FromArgb(26,34,52):pressed?ControlPaint.Dark(BackColor,.15f):hovered?ControlPaint.Light(BackColor,.14f):BackColor;
+            using(var path=LensioBrand.Rounded(new RectangleF(.5f,.5f,Width-1,Height-1),6))
+            using(var brush=new SolidBrush(fill))using(var pen=new Pen(Focused?Color.FromArgb(142,165,255):Color.FromArgb(57,71,97))) {
+                e.Graphics.FillPath(brush,path);e.Graphics.DrawPath(pen,path);
+            }
+            TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(4,1,Math.Max(0,Width-8),Height-2),Enabled?ForeColor:Color.FromArgb(143,154,177),
+                TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
+            if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,new Rectangle(4,4,Width-8,Height-8),ForeColor,fill);
         }
     }
 
@@ -88,6 +97,8 @@ namespace ApexCam
             txtPhoneIp.Visible = btnConnectPhone.Visible = panelTelemetry.Visible = false;
             lblIpAddress.Visible = lblStatusPill.Visible = false;
             lblBrand.ForeColor = ColorTextPrimary;
+            topBarPanel.Paint+=(sender,e)=>LensioBrand.DrawLogo(e.Graphics,new Rectangle(10,3,30,30));
+            Shown+=(sender,e)=>{try{int dark=1,round=2;DwmSetWindowAttribute(Handle,20,ref dark,4);DwmSetWindowAttribute(Handle,33,ref round,4);}catch{}};
             quickBarPanel.Visible = false;
             topBarPanel.Height = 64;
             studioStatus = new StatusStrip {
@@ -265,7 +276,7 @@ namespace ApexCam
             if (studioStatus == null) return;
             int w = topBarPanel.ClientSize.Width;
             topBarPanel.Height = 64;
-            lblBrand.SetBounds(10,7,130,24);
+            lblBrand.SetBounds(46,7,140,24);
             btnTopUpdate.SetBounds(Math.Max(150,w-298),5,180,26);
             btnQuickVcam.SetBounds(Math.Max(258,w-112),5,102,26);
             studioStatus.SetBounds(6,35,Math.Max(100,w-12),25);

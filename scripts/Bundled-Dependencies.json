@@ -63,8 +63,8 @@
                   {
                       "group":  "LensioVirtualCamera",
                       "name":  "lensio-placeholder.png",
-                      "sha256":  "ca3a9fd01318530655d3ef9b403f8de28399422ef4ee7d12a6c6a54f136efc3f",
-                      "size":  89040
+                      "sha256":  "3043c3f4eb3d08f0fa24624cc0da28767ef2cb46a2c5e5d7d0899c023e127714",
+                      "size":  1164390
                   }
               ],
     "obsSourceUrl":  "https://github.com/obsproject/obs-studio/archive/refs/tags/32.1.0.tar.gz",

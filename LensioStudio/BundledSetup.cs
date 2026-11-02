@@ -16,7 +16,7 @@ namespace ApexCam {
   private const string Filter=CameraClassId;
   private const string LegacyObsFilter="{A3FCE0F5-3493-419F-958A-ABA1250EC20B}";
   private const string Category=@"SOFTWARE\Classes\CLSID\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\Instance\";
-  private const string Version="1.0.2";
+  private const string Version="1.0.4";
   private static readonly object usbGate=new object();
   private static string adbPath;
   public static string DriverDirectory {get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Lensio","VirtualCamera",Version);}}

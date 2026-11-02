@@ -1,8 +1,10 @@
 # Lensio
 
-**Your Android cameras. One Windows studio.**
+**Your cameras. One Windows studio.**
 
 LensioCam turns Android phones into wireless webcams. LensioStudio brings phones and PC webcams together in a compact Windows studio with movable sources, image overlays, live filters and automatic workspace saving.
+
+Lensio shares its blue/violet app identity across Windows and Android. Disconnected camera sources and the standalone virtual camera display the Lensio no-signal artwork. Select **LensioCam** in video apps; **OBS Virtual Camera** remains a separate device.
 
 - Use up to four phones over Wi-Fi or USB (ADB).
 - Add a built-in laptop camera or USB webcam alongside your phones.

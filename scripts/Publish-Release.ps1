@@ -38,6 +38,7 @@ try {
  $nativeRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../LensioStudio/native')).Path
  foreach($file in Get-ChildItem -LiteralPath $nativeRoot -Recurse -File){$entry='LensioStudio/native/'+$file.FullName.Substring($nativeRoot.Length+1).Replace('\','/');[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,$entry)|Out-Null}
  foreach($name in @('Build-VirtualCamera.ps1','Bundled-Dependencies.json')){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot $name),('scripts/'+$name))|Out-Null}
+ [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot '../assets/branding/no-signal.png'),'assets/branding/no-signal.png')|Out-Null
 } finally {$zip.Dispose()}
 $extra=@{'Lensio-VirtualCamera-source.zip'=$nativeSource;'OBS-Studio-32.1.0-source.tar.gz'=$source;'OBS-GPL-2.0.txt'=(Join-Path $PSScriptRoot '../docs/OBS-GPL-2.0.txt');'ANDROID-PLATFORM-TOOLS-NOTICES.txt'=(Join-Path $PSScriptRoot '../docs/ANDROID-PLATFORM-TOOLS-NOTICES.txt')}
 foreach($name in $extra.Keys){$null=Invoke-RestMethod ($upload+'?name='+$name) -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $extra[$name]}

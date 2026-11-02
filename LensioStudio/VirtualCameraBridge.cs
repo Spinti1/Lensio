@@ -230,27 +230,7 @@ namespace ApexCam
         private void RenderStandbyScreen()
         {
             using (Graphics g = Graphics.FromImage(normalizedBmp))
-            using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(11, 15, 25)))
-            using (SolidBrush textBrush = new SolidBrush(Color.FromArgb(241, 245, 249)))
-            using (SolidBrush subBrush = new SolidBrush(Color.FromArgb(148, 163, 184)))
-            using (SolidBrush accentBrush = new SolidBrush(Color.FromArgb(56, 189, 248)))
-            using (Font titleFont = new Font("Segoe UI", 28, FontStyle.Bold))
-            using (Font subFont = new Font("Segoe UI", 15, FontStyle.Regular))
-            using (Font badgeFont = new Font("Segoe UI", 12, FontStyle.Bold))
-            {
-                g.FillRectangle(bgBrush, 0, 0, targetWidth, targetHeight);
-
-                string badge = string.Format("LENSIOCAM VIRTUAL CAMERA ({0}x{1} DIRECTSHOW)", targetWidth, targetHeight);
-                g.DrawString(badge, badgeFont, accentBrush, 50, 50);
-
-                string title = "LensioStudio";
-                SizeF tSize = g.MeasureString(title, titleFont);
-                g.DrawString(title, titleFont, textBrush, (targetWidth - tSize.Width) / 2, targetHeight / 2 - 50);
-
-                string sub = "Camera ready. Open LensioCam on your phone to start streaming.";
-                SizeF sSize = g.MeasureString(sub, subFont);
-                g.DrawString(sub, subFont, subBrush, (targetWidth - sSize.Width) / 2, targetHeight / 2 + 10);
-            }
+                LensioBrand.DrawNoSignal(g,new Rectangle(0,0,targetWidth,targetHeight));
 
             ConvertBitmapToNv12(normalizedBmp, cachedNv12Buffer);
         }

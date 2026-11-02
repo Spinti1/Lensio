@@ -170,9 +170,10 @@ namespace ApexCam
         public void RenderCamera(Graphics g,float scaleX,float scaleY)
         {
             lock(imageLock) {
-                if(IsDisposed || !Visible || BitmapImage==null || Opacity<=0)return;
+                if(IsDisposed || !Visible || Opacity<=0)return;
                 var rect=new Rectangle((int)(X*scaleX),(int)(Y*scaleY),(int)(Width*scaleX),(int)(Height*scaleY));
                 if(rect.Width<=0 || rect.Height<=0)return;
+                if(BitmapImage==null){LensioBrand.DrawNoSignal(g,rect,Opacity);return;}
                 // Keep oversized off-canvas sources bounded; use the original renderer for extreme zooms.
                 if(rect.Width>8192 || rect.Height>8192) {
                     var state=g.Save();

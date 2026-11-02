@@ -179,16 +179,6 @@ namespace ApexCam
                 Renderer = new StudioMenuRenderer(), ShowImageMargin = false
             };
             sourceContextMenu.Items.Add("Properties...", null, (s,e) => ShowSourceProperties());
-            sourceContextMenu.Items.Add("Fit to canvas", null, (s,e) => {
-                if(selectedLayer==null)return;
-                selectedLayer.SetBounds(new RectangleF(0,0,1920,1080)); previewPanel.Invalidate();
-            });
-            sourceContextMenu.Items.Add("Center in frame", null, (s,e) => {
-                if (selectedLayer == null) return;
-                selectedLayer.X = (1920-selectedLayer.Width)/2;
-                selectedLayer.Y = (1080-selectedLayer.Height)/2;
-                previewPanel.Invalidate();
-            });
             sourceContextMenu.Items.Add("Show / hide", null, (s,e) => {
                 if (selectedLayer == null) return;
                 selectedLayer.Visible = !selectedLayer.Visible; RefreshSourcesList();
@@ -197,7 +187,7 @@ namespace ApexCam
                 if (selectedLayer == null) return;
                 RemoveSource(selectedLayer); selectedLayer = null; RefreshSourcesList();
             });
-            InitializeTransformMenu();
+            InitializeSourceEditing();
             ApplyMenuTheme(sourceContextMenu);
             lbSources.MouseDown += (s,e) => {
                 if (e.Button != MouseButtons.Right) return;
@@ -218,24 +208,29 @@ namespace ApexCam
             if (selectedLayer == null) return;
             using (var dialog = new Form {
                 Text = "Source properties", StartPosition = FormStartPosition.CenterParent,
-                ClientSize = new Size(400,250), MinimumSize = new Size(320,280),
+                ClientSize = new Size(460,390), MinimumSize = new Size(390,410),
                 FormBorderStyle = FormBorderStyle.SizableToolWindow,
                 BackColor = ColorCardBg, ForeColor = ColorTextPrimary, ShowInTaskbar = false
             }) {
                 sourcePropertiesWindow = dialog;
                 var close = new Button { Text = "Done", Dock = DockStyle.Bottom, Height = 30, DialogResult = DialogResult.OK };
-                dialog.Controls.Add(propContentPanel);
+                var tabs=new TabControl{Dock=DockStyle.Fill,Name="SourcePropertiesTabs",DrawMode=TabDrawMode.OwnerDrawFixed};
+                tabs.DrawItem+=(s,e)=>{using(var background=new SolidBrush(e.Index==tabs.SelectedIndex?ColorButtonDark:ColorCardBg))e.Graphics.FillRectangle(background,e.Bounds);TextRenderer.DrawText(e.Graphics,tabs.TabPages[e.Index].Text,Font,e.Bounds,ColorTextPrimary,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);};
+                var properties=new TabPage("Properties"){BackColor=ColorCardBg,ForeColor=ColorTextPrimary};
+                var transform=new TabPage("Transform"){BackColor=ColorCardBg,ForeColor=ColorTextPrimary};
+                properties.Controls.Add(propContentPanel);transform.Controls.Add(BuildTransformProperties(selectedLayer));tabs.TabPages.Add(properties);tabs.TabPages.Add(transform);dialog.Controls.Add(tabs);
                 dialog.Controls.Add(close);
                 propContentPanel.Visible = true;
                 UpdatePropertiesDock();
                 ApplyStudioControlStyle(propContentPanel);
                 LayoutPropertiesContent();
                 dialog.Resize += (s,e) => LayoutPropertiesContent();
+                StyleSourceDialog(dialog);
                 dialog.AcceptButton = close;
                 dialog.CancelButton = close;
                 try { dialog.ShowDialog(this); }
                 finally {
-                    dialog.Controls.Remove(propContentPanel);
+                    properties.Controls.Remove(propContentPanel);
                     dockProperties.Controls.Add(propContentPanel);
                     propContentPanel.Visible = false;
                     sourcePropertiesWindow = null;

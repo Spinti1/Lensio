@@ -8,7 +8,7 @@ using ApexCam;
 class BundledSetupSmoke {
  static void Check(bool value,string text){if(!value)throw new Exception(text);}
  static int Main(){
-  foreach(var name in new[]{"lensio-virtualcam-module64.dll","lensio-virtualcam-module32.dll","obs-virtualcam-module64.dll","obs-virtualcam-module32.dll","placeholder.png","adb.exe","AdbWinApi.dll","AdbWinUsbApi.dll","MicrosoftEdgeWebview2Setup.exe"}){
+  foreach(var name in new[]{"lensio-virtualcam-module64.dll","lensio-virtualcam-module32.dll","lensio-placeholder.png","obs-virtualcam-module64.dll","obs-virtualcam-module32.dll","placeholder.png","adb.exe","AdbWinApi.dll","AdbWinUsbApi.dll","MicrosoftEdgeWebview2Setup.exe"}){
    byte[] data=BundledSetup.ReadVerifiedPayload(name);Check(data.Length>1000,"Missing payload: "+name);
    if(name.EndsWith(".exe")||name.EndsWith(".dll"))Check(data[0]=='M'&&data[1]=='Z',"Not a Windows executable");
   }

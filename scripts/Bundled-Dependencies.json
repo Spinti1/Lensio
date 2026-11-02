@@ -51,14 +51,20 @@
                   {
                       "group":  "LensioVirtualCamera",
                       "name":  "lensio-virtualcam-module64.dll",
-                      "sha256":  "966b36ec3b5774ddbbf78e2aa0cfe8ca7c77fed8551b6d147786126e5f07dac9",
+                      "sha256":  "53450704f59b6941c39172df2549743a6c4d1baeffac18894ba93d5c0b100dcc",
                       "size":  225792
                   },
                   {
                       "group":  "LensioVirtualCamera",
                       "name":  "lensio-virtualcam-module32.dll",
-                      "sha256":  "cb7e1544169e2f0c6ac866282f73abb0828c92c99503c6f320a373af7d2b7524",
+                      "sha256":  "4ef2bb5fe9b63b049358769419cd7fd1512d0b44771964b293153f801983f496",
                       "size":  185856
+                  },
+                  {
+                      "group":  "LensioVirtualCamera",
+                      "name":  "lensio-placeholder.png",
+                      "sha256":  "ca3a9fd01318530655d3ef9b403f8de28399422ef4ee7d12a6c6a54f136efc3f",
+                      "size":  89040
                   }
               ],
     "obsSourceUrl":  "https://github.com/obsproject/obs-studio/archive/refs/tags/32.1.0.tar.gz",

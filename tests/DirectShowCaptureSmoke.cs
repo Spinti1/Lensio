@@ -84,6 +84,10 @@ class DirectShowCaptureSmoke {
    Check(hr,"Read frame");if(size<=0)throw new Exception("Camera returned no sample");
    IntPtr data=Marshal.AllocCoTaskMem(size);
    try{Check(samples.GetCurrentBuffer(ref size,data),"Copy sample");if(args.Length>1){int expected=int.Parse(args[1]);int actual=Marshal.ReadByte(data);if(Math.Abs(expected-actual)>3)throw new Exception("Crossed camera stream: expected Y="+expected+" got "+actual);Console.WriteLine("PASS independent "+args[0]+" pixel Y="+actual);}
+   if(args.Length>0&&args[0]=="standby"){
+    var known=new byte[]{32,36,51};var points=new int[]{0,360*1280+100,719*1280+1279};for(int i=0;i<points.Length;i++)if(Math.Abs(Marshal.ReadByte(data,points[i])-known[i])>4)throw new Exception("Offline output does not match Lensio-owned artwork");
+    Console.WriteLine("PASS Lensio-owned offline background samples");
+   }
    Console.WriteLine("PASS DirectShow "+(IntPtr.Size*8)+"-bit: camera started and delivered "+size+" video bytes");}
    finally{Marshal.FreeCoTaskMem(data);}
    return 0;

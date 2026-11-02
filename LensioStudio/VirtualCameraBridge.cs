@@ -240,7 +240,7 @@ namespace ApexCam
             {
                 g.FillRectangle(bgBrush, 0, 0, targetWidth, targetHeight);
 
-                string badge = string.Format("● APEXCAM VIRTUAL CAMERA ({0}x{1} DIRECTSHOW)", targetWidth, targetHeight);
+                string badge = string.Format("LENSIOCAM VIRTUAL CAMERA ({0}x{1} DIRECTSHOW)", targetWidth, targetHeight);
                 g.DrawString(badge, badgeFont, accentBrush, 50, 50);
 
                 string title = "LensioStudio";

@@ -52,3 +52,11 @@ SOFTWARE.
 
 
 Additional bundled dependencies: OBS Studio 32.1.0 virtual camera (GPL v2), Android platform-tools 36.0.2 (upstream notices), and the official Microsoft WebView2 Evergreen bootstrapper. Full notices are embedded as LensioSetup.OBS-GPL-2.0.txt and LensioSetup.AndroidNotices.txt; matching OBS source and license files accompany the release. See docs/BUNDLED_DEPENDENCIES.md in the Lensio source repository.
+
+
+Lensio virtual-camera adaptation of OBS Studio 32.1.0 (GPL-2.0-or-later).
+Modified source/build scripts accompany the release in Lensio-VirtualCamera-source.zip.
+libdshowcapture commit 8878638324393815512f802640b0d5ce940161f1
+Copyright (C) 2023 Lain Bailey and contributors; LGPL-2.1-or-later.
+The combined module is distributed under GPL-2.0-or-later. Complete licenses are in
+LensioStudio/native/COPYING and native/deps/libdshowcapture/COPYING.

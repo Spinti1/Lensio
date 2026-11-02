@@ -1,0 +1,18 @@
+# Lensio virtual-camera module
+
+This GPL-2.0-or-later module adapts the OBS Studio 32.1.0 DirectShow virtual-camera source. It is compiled from source for x64 and x86 and statically links the MSVC runtime. It is not Authenticode-signed. No OBS installation is required.
+
+Upstream source: https://github.com/obsproject/obs-studio/tree/32.1.0 . The original source archive SHA-256 is `40d1d5cee743929ecb19f400c69f0c796ba59a01b65f0785d1545b970f2d6b2f`.
+
+The libdshowcapture files are from upstream commit `8878638324393815512f802640b0d5ce940161f1` at https://github.com/obsproject/libdshowcapture . Its source archive SHA-256 is `f473bd8040fd772bb590ad03952031a056dbaab9d9310b10d9ebd8bee3da2407`. Its LGPL-2.1-or-later notice is retained in `deps/libdshowcapture/COPYING`; the combined module is distributed under GPL-2.0-or-later. The OBS utility headers retain their permissive upstream notices. The full GPL text is in `COPYING`.
+
+Changes by the Lensio project (2026):
+
+- DirectShow CLSID `{C1E98240-49E5-4F53-9B1A-957266D2357A}` and device name `LensioCam`.
+- Shared-memory video channel `LensioVirtualCamVideo` and per-user `lensio-virtualcam.txt` metadata, independent from OBS.
+- Safe 1280x720 / 30 FPS defaults before the first studio launch; validation of remembered dimensions and interval; correct invalid-file-handle detection.
+- Standalone CMake build, separate output DLL names, static runtime and standard Windows DLL protections.
+
+Build with Visual Studio Build Tools 2022 (C++ x86/x64 workload, Windows SDK and CMake): run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build-VirtualCamera.ps1` from the repository root. This builds both architectures into ignored `build/native64` and `build/native32`, copies them into ignored `LensioStudio/vendor/VirtualCamera`, compresses them and updates the manifest with their actual sizes/hashes. The desktop build embeds these verified payloads. Bump the protected driver-directory version in BundledSetup.cs whenever distributed module bytes change; installed directories are immutable.
+
+The published release includes this source subtree and its build scripts as `Lensio-VirtualCamera-source.zip`, as well as the matching unmodified OBS source archive. The complete Lensio source tag contains the remaining application/installer sources.

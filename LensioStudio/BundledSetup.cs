@@ -12,9 +12,11 @@ using Microsoft.Win32;
 
 namespace ApexCam {
  public static class BundledSetup {
-  private const string Filter="{A3FCE0F5-3493-419F-958A-ABA1250EC20B}";
+  public const string CameraClassId="{C1E98240-49E5-4F53-9B1A-957266D2357A}";
+  private const string Filter=CameraClassId;
+  private const string LegacyObsFilter="{A3FCE0F5-3493-419F-958A-ABA1250EC20B}";
   private const string Category=@"SOFTWARE\Classes\CLSID\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\Instance\";
-  private const string Version="32.1.0";
+  private const string Version="1.0.1";
   private static readonly object usbGate=new object();
   private static string adbPath;
   public static string DriverDirectory {get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Lensio","VirtualCamera",Version);}}
@@ -74,12 +76,12 @@ namespace ApexCam {
   public static bool IsCameraInstalled(){
    try{
     foreach(var view in new[]{RegistryView.Registry64,RegistryView.Registry32})using(var hive=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,view)){
-     string name=view==RegistryView.Registry64?"obs-virtualcam-module64.dll":"obs-virtualcam-module32.dll";
+     string name=view==RegistryView.Registry64?"lensio-virtualcam-module64.dll":"lensio-virtualcam-module32.dll";
      using(var module=hive.OpenSubKey(@"SOFTWARE\Classes\CLSID\"+Filter+@"\InprocServer32"))using(var device=hive.OpenSubKey(Category+Filter)){
       if(module==null||device==null||Convert.ToString(device.GetValue("FriendlyName"))!="LensioCam")return false;
       string path=Convert.ToString(module.GetValue(""));
-      // Existing working OBS registrations remain usable; no needless replacement or elevation.
-      if(string.IsNullOrEmpty(path)||!File.Exists(path)||!string.Equals(Path.GetFileName(path),name,StringComparison.OrdinalIgnoreCase))return false;
+      // Only the independent Lensio class and protected payload count as installed.
+      if(string.IsNullOrEmpty(path)||!string.Equals(Path.GetFullPath(path),Path.Combine(DriverDirectory,name),StringComparison.OrdinalIgnoreCase)||!SameFile(path,ReadVerifiedPayload(name)))return false;
      }
     }
     return true;
@@ -93,9 +95,9 @@ namespace ApexCam {
      try{
       string root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Lensio");
       CreateProtectedDirectory(root);CreateProtectedDirectory(Path.Combine(root,"VirtualCamera"));CreateProtectedDirectory(DriverDirectory);
-      foreach(string name in new[]{"obs-virtualcam-module64.dll","obs-virtualcam-module32.dll","placeholder.png"})WriteComponent(DriverDirectory,name,true);
+      foreach(string name in new[]{"lensio-virtualcam-module64.dll","lensio-virtualcam-module32.dll","placeholder.png"})WriteComponent(DriverDirectory,name,true);
       foreach(var view in new[]{RegistryView.Registry64,RegistryView.Registry32}){
-       string name=view==RegistryView.Registry64?"obs-virtualcam-module64.dll":"obs-virtualcam-module32.dll";
+       string name=view==RegistryView.Registry64?"lensio-virtualcam-module64.dll":"lensio-virtualcam-module32.dll";
        string registrar=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),view==RegistryView.Registry64?"System32":"SysWOW64","regsvr32.exe");
        using(var p=Process.Start(new ProcessStartInfo{FileName=registrar,Arguments="/i /s \""+Path.Combine(DriverDirectory,name)+"\"",WorkingDirectory=Environment.SystemDirectory,UseShellExecute=false,CreateNoWindow=true})){
         if(!p.WaitForExit(30000)){p.Kill();throw new IOException("Camera registration timed out");}if(p.ExitCode!=0)throw new IOException("Camera registration failed");
@@ -105,10 +107,33 @@ namespace ApexCam {
         using(var key=hive.OpenSubKey(Category+Filter,true)){if(key==null)throw new IOException("Camera device registration missing");key.SetValue("FriendlyName","LensioCam",RegistryValueKind.String);}
        }
       }
+      RestoreLegacyObsRegistration();
       return IsCameraInstalled()?0:1;
      }finally{mutex.ReleaseMutex();}
     }
    }catch{return 1;}
+  }
+  private static void RestoreLegacyObsRegistration(){
+   // Earlier Lensio versions claimed OBS' class. Restore only that known Lensio-owned
+   // registration; leave an existing third-party OBS registration completely untouched.
+   string legacyDirectory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Lensio","VirtualCamera","32.1.0");
+   foreach(var view in new[]{RegistryView.Registry64,RegistryView.Registry32})using(var hive=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,view)){
+    string name=view==RegistryView.Registry64?"obs-virtualcam-module64.dll":"obs-virtualcam-module32.dll";
+    string owned=Path.Combine(legacyDirectory,name),path=null;
+    using(var module=hive.OpenSubKey(@"SOFTWARE\Classes\CLSID\"+LegacyObsFilter+@"\InprocServer32"))if(module!=null)path=Convert.ToString(module.GetValue(""));
+    if(!string.IsNullOrEmpty(path)&&string.Equals(Path.GetFullPath(path),owned,StringComparison.OrdinalIgnoreCase)){
+     CreateProtectedDirectory(legacyDirectory);WriteComponent(legacyDirectory,name,true);
+     string registrar=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),view==RegistryView.Registry64?"System32":"SysWOW64","regsvr32.exe");
+     using(var process=Process.Start(new ProcessStartInfo{FileName=registrar,Arguments="/s \""+owned+"\"",WorkingDirectory=Environment.SystemDirectory,UseShellExecute=false,CreateNoWindow=true})){
+      if(!process.WaitForExit(30000)){process.Kill();throw new IOException("Legacy OBS registration restoration timed out");}if(process.ExitCode!=0)throw new IOException("Legacy OBS registration restoration failed");
+     }
+    }
+    // Previous optional branding scripts changed this label even for a real OBS install.
+    using(var key=hive.OpenSubKey(Category+LegacyObsFilter,true))if(key!=null&&Convert.ToString(key.GetValue("FriendlyName"))=="LensioCam")key.SetValue("FriendlyName","OBS Virtual Camera",RegistryValueKind.String);
+    string alias="{22081546-559F-491A-851C-647963951B3B}";bool remove=false;
+    using(var key=hive.OpenSubKey(Category+alias))if(key!=null)remove=string.Equals(Convert.ToString(key.GetValue("CLSID")),LegacyObsFilter,StringComparison.OrdinalIgnoreCase);
+    if(remove)hive.DeleteSubKeyTree(Category+alias,false);
+   }
   }
   public static bool RequestCameraInstall(IWin32Window owner){
    try{

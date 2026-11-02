@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Build desktop
@@ -18,7 +18,7 @@ jobs:
         run: |
           $compiler="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           Copy-Item artifacts/LensioStudio.exe ./LensioStudio.exe
-          foreach($name in @('FilterBehaviorSmoke','SourceEditingSmoke','PairingQrSmoke','ImageCacheSmoke','OverlayGeometrySmoke','CameraCompositionSmoke','MultiDeviceSmoke','StudioLayoutSmoke','WorkspacePersistenceSmoke','GitHubUpdaterSmoke','WebCameraBridgeSmoke','BundledSetupSmoke','UpdateSetupSmoke')) {
+          foreach($name in @('FilterBehaviorSmoke','SourceEditingSmoke','PairingQrSmoke','ImageCacheSmoke','OverlayGeometrySmoke','CameraCompositionSmoke','MultiDeviceSmoke','StudioLayoutSmoke','WorkspacePersistenceSmoke','GitHubUpdaterSmoke','WebCameraBridgeSmoke','BundledSetupSmoke','VirtualCameraQueueSmoke','UpdateSetupSmoke')) {
             $source=Join-Path $env:GITHUB_WORKSPACE "tests\$name.cs"
             $output=Join-Path $env:GITHUB_WORKSPACE "$name.exe"
             & $compiler /nologo '/r:System.dll,System.Core.dll,System.Drawing.dll,System.Windows.Forms.dll,System.Web.Extensions.dll' '/r:LensioStudio.exe' "/out:$output" $source

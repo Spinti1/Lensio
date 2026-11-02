@@ -69,7 +69,7 @@ namespace ApexCam {
         static object Create(string id){return Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid(id),true));}
         static void Release(object o){if(o!=null&&Marshal.IsComObject(o))Marshal.ReleaseComObject(o);}
         static void Check(int hr){if(hr<0)Marshal.ThrowExceptionForHR(hr);}
-        static bool Allowed(string name,string clsid){return !string.Equals(clsid,"{A3FCE0F5-3493-419F-958A-ABA1250EC20B}",StringComparison.OrdinalIgnoreCase) && !string.Equals(name,"LensioCam",StringComparison.OrdinalIgnoreCase) && !string.Equals(name,"OBS Virtual Camera",StringComparison.OrdinalIgnoreCase) && !string.Equals(name,"ApexCam",StringComparison.OrdinalIgnoreCase);}
+        static bool Allowed(string name,string clsid){return !string.Equals(clsid,BundledSetup.CameraClassId,StringComparison.OrdinalIgnoreCase) && !string.Equals(clsid,"{A3FCE0F5-3493-419F-958A-ABA1250EC20B}",StringComparison.OrdinalIgnoreCase) && !string.Equals(name,"LensioCam",StringComparison.OrdinalIgnoreCase) && !string.Equals(name,"OBS Virtual Camera",StringComparison.OrdinalIgnoreCase) && !string.Equals(name,"ApexCam",StringComparison.OrdinalIgnoreCase);}
         static void Enumerate(Action<IMoniker,string,string> visit){
             object factory=null;IEnumMoniker items=null;
             try{factory=Create("62be5d10-60eb-11d0-bd3b-00a0c911ce86");Guid category=new Guid("860bb310-5d01-11d0-bd3b-00a0c911ce86");

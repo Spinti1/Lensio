@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 // Opens the same DirectShow source used by Discord/Chromium and waits for a real sample.
@@ -22,7 +22,7 @@ class DirectShowCaptureSmoke {
     try {
      var iid=typeof(IPropertyBag).GUID;next[0].BindToStorage(null,null,ref iid,out bag);
      object name,id;((IPropertyBag)bag).Read("FriendlyName",out name,IntPtr.Zero);((IPropertyBag)bag).Read("CLSID",out id,IntPtr.Zero);
-     if(string.Equals(Convert.ToString(id),"{A3FCE0F5-3493-419F-958A-ABA1250EC20B}",StringComparison.OrdinalIgnoreCase)){
+     if(string.Equals(Convert.ToString(id),"{C1E98240-49E5-4F53-9B1A-957266D2357A}",StringComparison.OrdinalIgnoreCase)){
       count++;if(Convert.ToString(name)!="LensioCam")throw new Exception("Unexpected Windows camera name: "+name);
      }
     }finally{if(bag!=null)Marshal.ReleaseComObject(bag);Marshal.ReleaseComObject(next[0]);}
@@ -60,11 +60,11 @@ class DirectShowCaptureSmoke {
  }
  static object Create(string guid){return Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid(guid),true));}
  static void Check(int hr,string action){if(hr<0)throw new COMException(action,hr);}
- [STAThread]static int Main(){
+ [STAThread]static int Main(string[] args){
   object camera=null,graph=null,builder=null,grabber=null,sink=null;IMediaControl control=null;
   try {
    VerifyDeviceName();
-   camera=Create("A3FCE0F5-3493-419F-958A-ABA1250EC20B");
+   camera=Create(args.Length>0&&args[0]=="obs"?"A3FCE0F5-3493-419F-958A-ABA1250EC20B":"C1E98240-49E5-4F53-9B1A-957266D2357A");
    graph=Create("E436EBB3-524F-11CE-9F53-0020AF0BA770");
    builder=Create("BF87B6E1-8C27-11D0-B3F0-00AA003761C5");
    grabber=Create("C1F400A0-3F08-11D3-9F0B-006008039E37");
@@ -83,7 +83,8 @@ class DirectShowCaptureSmoke {
    int size=0,hr=-1;for(int attempt=0;attempt<40;attempt++){Thread.Sleep(100);hr=samples.GetCurrentBuffer(ref size,IntPtr.Zero);if(hr>=0 && size>0)break;}
    Check(hr,"Read frame");if(size<=0)throw new Exception("Camera returned no sample");
    IntPtr data=Marshal.AllocCoTaskMem(size);
-   try{Check(samples.GetCurrentBuffer(ref size,data),"Copy sample");Console.WriteLine("PASS DirectShow "+(IntPtr.Size*8)+"-bit: camera started and delivered "+size+" video bytes");}
+   try{Check(samples.GetCurrentBuffer(ref size,data),"Copy sample");if(args.Length>1){int expected=int.Parse(args[1]);int actual=Marshal.ReadByte(data);if(Math.Abs(expected-actual)>3)throw new Exception("Crossed camera stream: expected Y="+expected+" got "+actual);Console.WriteLine("PASS independent "+args[0]+" pixel Y="+actual);}
+   Console.WriteLine("PASS DirectShow "+(IntPtr.Size*8)+"-bit: camera started and delivered "+size+" video bytes");}
    finally{Marshal.FreeCoTaskMem(data);}
    return 0;
   }catch(Exception e){Console.WriteLine("FAIL "+e.Message+" (0x"+e.HResult.ToString("X8")+")");return 1;}

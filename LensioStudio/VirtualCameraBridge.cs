@@ -62,7 +62,7 @@ namespace ApexCam
                 pumpThread = new Thread(PumpLoop)
                 {
                     IsBackground = true,
-                    Name = "ApexCam_VirtualCam_Pump"
+                    Name = "Lensio_VirtualCam_Pump"
                 };
                 pumpThread.Start();
             }
@@ -162,7 +162,7 @@ namespace ApexCam
                     }
 
                     int mapCapacity = Math.Max(totalSize, 32 * 1024 * 1024);
-                    mmfObs = MemoryMappedFile.CreateOrOpen("OBSVirtualCamVideo", mapCapacity, MemoryMappedFileAccess.ReadWrite);
+                    mmfObs = MemoryMappedFile.CreateOrOpen("LensioVirtualCamVideo", mapCapacity, MemoryMappedFileAccess.ReadWrite);
                     // Map full available capacity without hardcoded totalSize to prevent crash if held by external process
                     accessorObs = mmfObs.CreateViewAccessor(0, 0, MemoryMappedFileAccess.ReadWrite);
 
@@ -199,11 +199,11 @@ namespace ApexCam
                     accessorObs.Write(36, (uint)0);           // padding for 64-bit alignment (offset 36)
                     accessorObs.Write(40, interval);          // interval (offset 40!)
 
-                    // Write obs-virtualcam.txt for DirectShow filter initialization
+                    // Write lensio-virtualcam.txt for DirectShow filter initialization
                     try
                     {
                         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                        string resFile = Path.Combine(appData, "obs-virtualcam.txt");
+                        string resFile = Path.Combine(appData, "lensio-virtualcam.txt");
                         File.WriteAllText(resFile, string.Format("{0}x{1}x{2}", width, height, interval));
                     }
                     catch { }

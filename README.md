@@ -26,7 +26,7 @@ The phone remembers the paired PC after a successful connection. Opening the nor
 1. Download **LensioStudio.exe** and **LensioCam.apk** from [Releases](https://github.com/Spinti1/Lensio/releases/latest). Install each file on its corresponding device; the PC does not need to keep a copy of the APK.
 2. Install the APK on your Android phone, grant camera/microphone permissions and open LensioCam.
 3. Open LensioStudio on Windows. Use the same Wi-Fi network, or enable USB debugging for ADB.
-4. On first launch, accept LensioStudio's virtual-camera setup and the Windows administrator prompt. No OBS installation or external scripts are needed. Select **LensioCam** in your video app.
+4. On first launch (or after upgrading an older shared-camera version), accept LensioStudio's virtual-camera setup and the Windows administrator prompt. No OBS installation or external scripts are needed. Select **LensioCam** in your video app. **OBS Virtual Camera** remains a separate device. Restart Discord/browser camera sessions after installation so they refresh their device lists. If setup was declined, use the LensioStudio tray menu → **Install / repair virtual camera**.
 
 Windows 10/11 x64 and Android 8+ are required. The single Windows EXE embeds the 32/64-bit virtual camera, ADB USB tools and a signed Microsoft WebView2 bootstrapper. If WebView2 is missing, LensioStudio offers a per-user installation; this step needs internet access. USB still requires the phone owner to enable and authorize USB debugging, and some phones need their manufacturer's USB driver. Actual resolution and frame rate depend on the phone, camera driver, lighting and connection. Screen-off capture can be affected by vendor power management.
 
@@ -66,7 +66,7 @@ This repository contains a clean source snapshot, without private Git history, d
 
 ## Build
 
-**Windows:** run `LensioStudio\build.bat`. This uses the Windows .NET Framework compiler and writes `LensioStudio.exe` next to the source folder.
+**Windows:** install Visual Studio Build Tools 2022 with C++ x86/x64, Windows SDK and CMake, then run `LensioStudio\build.bat`. It builds both native virtual-camera modules from source and the desktop app with the Windows .NET Framework compiler, writing `LensioStudio.exe` next to the source folder.
 
 **Android:** install JDK 21 and Android SDK 34, set `JAVA_HOME` and `ANDROID_HOME`, then run `LensioCam\build_android.bat`. The APK uses your local Android debug signing key for compatibility with the current development release. Keep that key private and preserve it for future updates. A different key requires uninstalling the previous app.
 
@@ -76,4 +76,4 @@ The public CI builds and tests both platforms; its APK is only a build artifact,
 
 The maintained clients are `LensioStudio/` (C# / WinForms), `LensioCam/android/` (Kotlin / CameraX), and `web/` (buildless Safari/WebRTC client). `scripts/Prepare-BundledDependencies.ps1` verifies dependency archive/component hashes and OBS/Microsoft signatures before embedding compressed components. `tests/` contains desktop composition, persistence, layout, DirectShow, web bridge, pairing-protocol and updater checks; Android unit tests cover streaming lifecycle, YUV packing and release metadata validation.
 
-The DirectShow bridge uses the OBS virtual-camera interface. OBS Studio and other dependencies retain their respective licenses. The official OBS 32.1.0 camera modules are embedded in release EXEs; source checkouts fetch pinned official dependencies when building. Matching OBS source and license files accompany each release. See [dependency provenance](docs/BUNDLED_DEPENDENCIES.md).
+LensioCam has its own DirectShow class, DLLs, video queue and metadata file, and can run alongside OBS Virtual Camera. Its native module is built from adapted OBS 32.1.0 source; the modified source and build scripts are included in the repository and release source archive. The old signed official modules are retained only to restore known Lensio-owned legacy OBS registrations during migration. LensioStudio and the new Lensio camera DLLs are not code-signed. OBS Studio and other dependencies retain their respective licenses. See [dependency provenance](docs/BUNDLED_DEPENDENCIES.md).

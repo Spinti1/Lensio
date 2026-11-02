@@ -29,7 +29,17 @@ if(!(Test-Path -LiteralPath $source)){
  Invoke-WebRequest -UseBasicParsing $manifest.obsSourceUrl -OutFile $source
 }
 if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.obsSourceSha256){throw 'Matching OBS source archive verification failed. Release remains a draft.'}
-$extra=@{'OBS-Studio-32.1.0-source.tar.gz'=$source;'OBS-GPL-2.0.txt'=(Join-Path $PSScriptRoot '../docs/OBS-GPL-2.0.txt');'ANDROID-PLATFORM-TOOLS-NOTICES.txt'=(Join-Path $PSScriptRoot '../docs/ANDROID-PLATFORM-TOOLS-NOTICES.txt')}
+# Include the complete modified module sources and their build/manifest scripts.
+$nativeSource=Join-Path $PSScriptRoot '../.public-release/Lensio-VirtualCamera-source.zip'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if(Test-Path -LiteralPath $nativeSource){Remove-Item -LiteralPath $nativeSource}
+$zip=[IO.Compression.ZipFile]::Open($nativeSource,[IO.Compression.ZipArchiveMode]::Create)
+try {
+ $nativeRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../LensioStudio/native')).Path
+ foreach($file in Get-ChildItem -LiteralPath $nativeRoot -Recurse -File){$entry='LensioStudio/native/'+$file.FullName.Substring($nativeRoot.Length+1).Replace('\','/');[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,$entry)|Out-Null}
+ foreach($name in @('Build-VirtualCamera.ps1','Bundled-Dependencies.json')){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot $name),('scripts/'+$name))|Out-Null}
+} finally {$zip.Dispose()}
+$extra=@{'Lensio-VirtualCamera-source.zip'=$nativeSource;'OBS-Studio-32.1.0-source.tar.gz'=$source;'OBS-GPL-2.0.txt'=(Join-Path $PSScriptRoot '../docs/OBS-GPL-2.0.txt');'ANDROID-PLATFORM-TOOLS-NOTICES.txt'=(Join-Path $PSScriptRoot '../docs/ANDROID-PLATFORM-TOOLS-NOTICES.txt')}
 foreach($name in $extra.Keys){$null=Invoke-RestMethod ($upload+'?name='+$name) -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $extra[$name]}
 $checksums=@()
 foreach($name in @('LensioStudio.exe','LensioCam.apk')) {

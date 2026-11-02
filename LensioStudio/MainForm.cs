@@ -1023,8 +1023,8 @@ namespace ApexCam
             }
 
             lblPropTitle.Visible = false;
-            int y = 2;
-            int w = propContentPanel.Width - 16;
+            int y = 12;
+            int w = propContentPanel.Width - 28;
 
             Label lblName = new Label
             {
@@ -1066,6 +1066,10 @@ namespace ApexCam
             };
             propContentPanel.Controls.Add(tbOp);
             y += 30;
+
+            var transform=BuildTransformProperties(selectedLayer);
+            transform.Name="SourceTransformControls";transform.Dock=DockStyle.None;transform.SetBounds(14,y,w,216);
+            propContentPanel.Controls.Add(transform);y+=226;
 
             if (selectedLayer.Type == SourceType.Image)
             {
@@ -1197,6 +1201,7 @@ namespace ApexCam
                 propContentPanel.Controls.Add(tbF);
                 y += 30;
             }
+            propContentPanel.Tag=y+12;
             ApplyStudioControlStyle(propContentPanel);
             LayoutPropertiesContent();
         }

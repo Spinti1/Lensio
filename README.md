@@ -38,13 +38,13 @@ Use **Sources → Add → PC / laptop webcam...** to choose a Windows webcam. Ea
 
 Drag a source to move it. Magnetic guides align visible edges and centers with the canvas and other visible sources. Resize handles also align edges on unrotated sources; camera corners preserve their aspect ratio. Snap targets are collected once at drag start, with no network polling or per-move saves. Hold **Alt** while moving to bypass snapping, or disable **Image → Magnetic snapping**.
 
-Hold **Alt** while starting a handle drag to crop the source instead of scaling it. Cropping is nondestructive. Right-click a source → **Properties → Transform** provides fit, center, clockwise/counterclockwise rotation, a custom rotation angle, crop reset, lock/unlock and visibility-shortcut assignment. The outline and hit testing follow rotation and the visible crop.
+Hold **Alt** while starting a handle drag to crop the source instead of scaling it. Cropping is nondestructive. Right-click a source → **Properties** provides fit, center, clockwise/counterclockwise rotation, a custom rotation angle, crop reset, lock/unlock and visibility-shortcut assignment. The outline and hit testing follow rotation and the visible crop.
 
 - **Ctrl+Shift+H:** show/hide the selected source.
 - **Ctrl+R / Ctrl+Shift+R:** rotate the selected source clockwise/counterclockwise by 90 degrees.
-- **Visibility shortcut...** in **Properties → Transform** records a single key or a combination with Ctrl, Alt or Shift. Letters, Space, F keys, arrows, navigation keys and numpad keys are supported. Press **Record shortcut** to change it or **Clear** to remove it. Conflicts with another source are rejected; explicit source bindings override built-in editor shortcuts. Holding the key does not toggle repeatedly. These shortcuts work while LensioStudio is focused and do not intercept text editing. Standalone modifier keys and Windows-reserved combinations are not intercepted.
+- **Visibility shortcut...** in **Properties** records a single key or a combination with Ctrl, Alt or Shift. Letters, Space, F keys, arrows, navigation keys and numpad keys are supported. Press **Record shortcut** to change it or **Clear** to remove it. Conflicts with another source are rejected; explicit source bindings override built-in editor shortcuts. Holding the key does not toggle repeatedly. These shortcuts work while LensioStudio is focused and do not intercept text editing. Standalone modifier keys and Windows-reserved combinations are not intercepted.
 
-Rotation, crop and visibility shortcuts are saved with the workspace. Transforms live in the source Properties dialog instead of a separate context submenu.
+Rotation, crop and visibility shortcuts are saved with the workspace. Transforms appear directly below opacity on the same Properties page, without tabs or a separate category. The dialog sizes itself to the source content and uses dark controls and window chrome.
 
 Image/text additions and property edits save immediately; the periodic autosave still covers other settings. Imported images are managed independently of the original files. Saved scenes render on startup even without a connected phone. An atomic workspace backup retains the preceding valid layout and its image assets for recovery.
 

@@ -205,36 +205,34 @@ namespace ApexCam
 
         private void ShowSourceProperties()
         {
-            if (selectedLayer == null) return;
-            using (var dialog = new Form {
-                Text = "Source properties", StartPosition = FormStartPosition.CenterParent,
-                ClientSize = new Size(460,390), MinimumSize = new Size(390,410),
-                FormBorderStyle = FormBorderStyle.SizableToolWindow,
-                BackColor = ColorCardBg, ForeColor = ColorTextPrimary, ShowInTaskbar = false
-            }) {
-                sourcePropertiesWindow = dialog;
-                var close = new Button { Text = "Done", Dock = DockStyle.Bottom, Height = 30, DialogResult = DialogResult.OK };
-                var tabs=new TabControl{Dock=DockStyle.Fill,Name="SourcePropertiesTabs",DrawMode=TabDrawMode.OwnerDrawFixed};
-                tabs.DrawItem+=(s,e)=>{using(var background=new SolidBrush(e.Index==tabs.SelectedIndex?ColorButtonDark:ColorCardBg))e.Graphics.FillRectangle(background,e.Bounds);TextRenderer.DrawText(e.Graphics,tabs.TabPages[e.Index].Text,Font,e.Bounds,ColorTextPrimary,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);};
-                var properties=new TabPage("Properties"){BackColor=ColorCardBg,ForeColor=ColorTextPrimary};
-                var transform=new TabPage("Transform"){BackColor=ColorCardBg,ForeColor=ColorTextPrimary};
-                properties.Controls.Add(propContentPanel);transform.Controls.Add(BuildTransformProperties(selectedLayer));tabs.TabPages.Add(properties);tabs.TabPages.Add(transform);dialog.Controls.Add(tabs);
-                dialog.Controls.Add(close);
-                propContentPanel.Visible = true;
+            if(selectedLayer==null)return;
+            using(var dialog=new Form{
+                Text="Source properties",StartPosition=FormStartPosition.CenterParent,
+                ClientSize=new Size(440,370),FormBorderStyle=FormBorderStyle.FixedDialog,
+                BackColor=ColorCardBg,ForeColor=ColorTextPrimary,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Segoe UI",9f)
+            }){
+                sourcePropertiesWindow=dialog;
+                var footer=new Panel{Dock=DockStyle.Bottom,Height=48,BackColor=ColorHeaderBg};
+                var close=CreateModernButton("Done",ColorAccentCyan,0,0,92,29);close.DialogResult=DialogResult.OK;
+                footer.Controls.Add(close);footer.Resize+=(s,e)=>close.SetBounds(Math.Max(12,footer.ClientSize.Width-106),9,92,29);
+                propContentPanel.Dock=DockStyle.Fill;propContentPanel.Visible=true;
+                dialog.Controls.Add(propContentPanel);dialog.Controls.Add(footer);
                 UpdatePropertiesDock();
-                ApplyStudioControlStyle(propContentPanel);
-                LayoutPropertiesContent();
-                dialog.Resize += (s,e) => LayoutPropertiesContent();
-                StyleSourceDialog(dialog);
-                dialog.AcceptButton = close;
-                dialog.CancelButton = close;
-                try { dialog.ShowDialog(this); }
-                finally {
-                    properties.Controls.Remove(propContentPanel);
-                    dockProperties.Controls.Add(propContentPanel);
-                    propContentPanel.Visible = false;
-                    sourcePropertiesWindow = null;
-                }
+                int preferred=propContentPanel.Tag is int?(int)propContentPanel.Tag:300;
+                int maximum=Math.Max(300,Screen.FromControl(this).WorkingArea.Height-52);
+                dialog.ClientSize=new Size(440,Math.Min(preferred+footer.Height,maximum));
+                LayoutPropertiesContent();StyleSourceDialog(dialog);footer.BackColor=ColorHeaderBg;close.BackColor=ColorAccentCyan;
+                dialog.AcceptButton=close;dialog.CancelButton=close;
+                dialog.Shown+=(s,e)=>{
+                    try{int dark=1,caption=ColorTranslator.ToWin32(ColorHeaderBg),text=ColorTranslator.ToWin32(ColorTextPrimary),border=ColorTranslator.ToWin32(ColorCardBorder);
+                        DwmSetWindowAttribute(dialog.Handle,20,ref dark,sizeof(int));DwmSetWindowAttribute(dialog.Handle,19,ref dark,sizeof(int));
+                        DwmSetWindowAttribute(dialog.Handle,35,ref caption,sizeof(int));DwmSetWindowAttribute(dialog.Handle,36,ref text,sizeof(int));DwmSetWindowAttribute(dialog.Handle,34,ref border,sizeof(int));
+                    }catch{}
+                    LayoutPropertiesContent();
+                };
+                dialog.Resize+=(s,e)=>LayoutPropertiesContent();
+                try{dialog.ShowDialog(this);}
+                finally{dialog.Controls.Remove(propContentPanel);propContentPanel.Dock=DockStyle.None;dockProperties.Controls.Add(propContentPanel);propContentPanel.Visible=false;sourcePropertiesWindow=null;}
             }
         }
 
@@ -369,11 +367,13 @@ namespace ApexCam
 
         private void LayoutPropertiesContent()
         {
-            if (propContentPanel == null) return;
-            foreach (Control c in propContentPanel.Controls) {
-                var label = c as Label;
-                if (label != null) { label.AutoSize = false; label.AutoEllipsis = true; }
-                c.Width = Math.Max(80,propContentPanel.ClientSize.Width-16);
+            if(propContentPanel==null)return;
+            int preferred=propContentPanel.Tag is int?(int)propContentPanel.Tag:propContentPanel.ClientSize.Height;
+            float scale=Math.Min(1,Math.Max(1,propContentPanel.ClientSize.Height-8)/(float)Math.Max(1,preferred-8));
+            foreach(Control control in propContentPanel.Controls){
+                var label=control as Label;if(label!=null){label.AutoSize=false;label.AutoEllipsis=true;}
+                Rectangle original=control.Tag is Rectangle?(Rectangle)control.Tag:control.Bounds;control.Tag=original;
+                control.SetBounds(14,(int)Math.Round(original.Top*scale),Math.Max(80,propContentPanel.ClientSize.Width-28),Math.Max(16,(int)Math.Round(original.Height*scale)));
             }
         }
 

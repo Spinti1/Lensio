@@ -42,9 +42,11 @@ class ShortcutPropertiesSmoke {
   layer.Visible=true;Exception error=null;
   using(var timer=new System.Windows.Forms.Timer{Interval=80}){
    timer.Tick+=(s,e)=>{var dialog=(Form)Get(f,"sourcePropertiesWindow");if(dialog==null)return;timer.Stop();try{
-    var tabs=(TabControl)dialog.Controls.Find("SourcePropertiesTabs",true)[0];Check(tabs.TabPages.Count==2&&tabs.TabPages[1].Text=="Transform","Transform is not in Properties");tabs.SelectedIndex=1;
-    var angle=(NumericUpDown)dialog.Controls.Find("SourceRotation",true)[0];angle.Value=45;Check(layer.Rotation==45,"Property rotation failed");layer.CropLeft=.2f;Button(tabs.TabPages[1],"Reset crop").PerformClick();Check(layer.CropLeft==0,"Property crop reset failed");
-    Button(tabs.TabPages[1],"Fit to canvas").PerformClick();Check(layer.Width==1920&&layer.Height==1080,"Property fit failed");
+    Check(dialog.Controls.Find("SourcePropertiesTabs",true).Length==0,"Separate transform tabs remain");var transform=dialog.Controls.Find("SourceTransformControls",true)[0];Check(transform.Parent==Get(f,"propContentPanel"),"Transform is not inline with source properties");
+    bool belowOpacity=false;foreach(Control c in transform.Parent.Controls)if(c is TrackBar&&c.Bottom<=transform.Top)belowOpacity=true;Check(belowOpacity,"Transforms are not below opacity");
+    Check(!((Panel)transform.Parent).AutoScroll,"Properties introduced a scrollbar");
+    var angle=(NumericUpDown)dialog.Controls.Find("SourceRotation",true)[0];angle.Value=45;Check(layer.Rotation==45,"Property rotation failed");layer.CropLeft=.2f;Button(transform,"Reset crop").PerformClick();Check(layer.CropLeft==0,"Property crop reset failed");
+    Button(transform,"Fit to canvas").PerformClick();Check(layer.Width==1920&&layer.Height==1080,"Property fit failed");
     Directory.CreateDirectory("build");using(var image=new Bitmap(dialog.Width,dialog.Height)){dialog.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save("build/properties-transform.png");}
    }catch(Exception ex){error=ex;}finally{dialog.Close();}};timer.Start();Call(f,"ShowSourceProperties");
   }

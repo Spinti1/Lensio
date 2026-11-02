@@ -50,14 +50,14 @@ namespace ApexCam {
             sourceToolTips.SetToolTip(previewPanel,"Drag to move. Drag a handle to resize. Alt + drag a handle crops. Alt + move bypasses snapping. Ctrl+Shift+H shows/hides the selected source.");
         }
         private Control BuildTransformProperties(ObsLayer layer){
-            var panel=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=7,Padding=new Padding(8),BackColor=ColorCardBg};
+            var panel=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=7,Padding=new Padding(0),BackColor=ColorCardBg};
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
             for(int i=0;i<7;i++)panel.RowStyles.Add(new RowStyle(SizeType.Percent,100f/7));
             Action<string,int,int,Action> button=(text,col,row,action)=>{var control=CreateModernButton(text,ColorButtonDark,0,0,120,28);control.Dock=DockStyle.Fill;control.Margin=new Padding(3);control.Click+=(s,e)=>{action();CommitSceneEdit();var shortcut=panel.Controls.Find("SourceShortcut",true);if(shortcut.Length>0)shortcut[0].Text=layer.VisibilityShortcut==0?"No shortcut":new KeysConverter().ConvertToString((Keys)layer.VisibilityShortcut);};panel.Controls.Add(control,col,row);};
             button("Fit to canvas",0,0,()=>layer.SetBounds(new RectangleF(0,0,1920,1080)));
             button("Center in frame",1,0,()=>{var bounds=layer.VisualBounds;layer.X+=960-bounds.X-bounds.Width/2;layer.Y+=540-bounds.Y-bounds.Height/2;});
             var label=new Label{Text="Rotation (degrees)",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=ColorTextPrimary};
-            var angle=new NumericUpDown{Name="SourceRotation",Dock=DockStyle.Fill,Minimum=-360,Maximum=360,DecimalPlaces=1,Value=(decimal)layer.Rotation,BackColor=ColorButtonDark,ForeColor=ColorTextPrimary,Margin=new Padding(3,8,3,3)};
+            var angle=new NumericUpDown{Name="SourceRotation",Dock=DockStyle.Fill,Minimum=-360,Maximum=360,DecimalPlaces=1,Value=(decimal)layer.Rotation,BackColor=ColorButtonDark,ForeColor=ColorTextPrimary,Margin=new Padding(3,3,3,3)};
             angle.ValueChanged+=(s,e)=>{layer.Rotation=(float)angle.Value;CommitSceneEdit();};panel.Controls.Add(label,0,1);panel.Controls.Add(angle,1,1);
             button("Rotate 90° left",0,2,()=>angle.Value=(decimal)((layer.Rotation+270)%360));
             button("Rotate 90° right",1,2,()=>angle.Value=(decimal)((layer.Rotation+90)%360));
@@ -65,7 +65,7 @@ namespace ApexCam {
             button("Reset crop",1,3,()=>layer.CropLeft=layer.CropRight=layer.CropTop=layer.CropBottom=0);
             var locked=new CheckBox{Name="SourceLocked",Text="Lock position and size",Checked=layer.Locked,Dock=DockStyle.Fill,ForeColor=ColorTextPrimary};
             locked.CheckedChanged+=(s,e)=>{layer.Locked=locked.Checked;CommitSceneEdit();};panel.Controls.Add(locked,0,4);panel.SetColumnSpan(locked,2);
-            var help=new Label{Text="Alt + drag a handle to crop. Alt + move bypasses snapping.",Dock=DockStyle.Fill,ForeColor=ColorTextSecondary,TextAlign=ContentAlignment.MiddleLeft};panel.Controls.Add(help,0,5);panel.SetColumnSpan(help,2);
+            var help=new Label{Text="Alt + drag handle: crop  ·  Alt + move: free positioning",Dock=DockStyle.Fill,ForeColor=ColorTextSecondary,TextAlign=ContentAlignment.MiddleLeft};panel.Controls.Add(help,0,5);panel.SetColumnSpan(help,2);
             button("Visibility shortcut...",0,6,()=>ShowVisibilityShortcut());
             var key=new Label{Name="SourceShortcut",Dock=DockStyle.Fill,ForeColor=ColorTextSecondary,TextAlign=ContentAlignment.MiddleLeft};Action refresh=()=>key.Text=layer.VisibilityShortcut==0?"No shortcut":new KeysConverter().ConvertToString((Keys)layer.VisibilityShortcut);refresh();key.VisibleChanged+=(s,e)=>refresh();panel.Controls.Add(key,1,6);
             return panel;

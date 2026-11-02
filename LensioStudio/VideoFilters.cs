@@ -364,7 +364,8 @@ namespace ApexCam
         {
             lock (sceneLock)
             {
-                layers.Insert(0, layer); // Insert at top of list (highest z-order)
+                int at=layer.Type==SourceType.Camera ? layers.FindIndex(l=>l.Type==SourceType.Camera) : 0;
+                layers.Insert(at<0?layers.Count:at,layer); // Overlays always precede cameras.
             }
         }
 
@@ -382,7 +383,7 @@ namespace ApexCam
             lock (sceneLock)
             {
                 int idx = layers.IndexOf(layer);
-                if (idx > 0)
+                if (idx > 0 && (layers[idx-1].Type==SourceType.Camera)==(layer.Type==SourceType.Camera))
                 {
                     layers.RemoveAt(idx);
                     layers.Insert(idx - 1, layer);
@@ -395,11 +396,20 @@ namespace ApexCam
             lock (sceneLock)
             {
                 int idx = layers.IndexOf(layer);
-                if (idx >= 0 && idx < layers.Count - 1)
+                if (idx >= 0 && idx < layers.Count - 1 && (layers[idx+1].Type==SourceType.Camera)==(layer.Type==SourceType.Camera))
                 {
                     layers.RemoveAt(idx);
                     layers.Insert(idx + 1, layer);
                 }
+            }
+        }
+
+        public bool ReorderCamera(ObsLayer moving,ObsLayer target,bool after) {
+            lock(sceneLock) {
+                if(moving==target||moving.Type!=SourceType.Camera||target.Type!=SourceType.Camera||!layers.Contains(moving)||!layers.Contains(target))return false;
+                int old=layers.IndexOf(moving);layers.Remove(moving);
+                int at=layers.IndexOf(target)+(after?1:0);layers.Insert(at,moving);
+                return old!=at;
             }
         }
 

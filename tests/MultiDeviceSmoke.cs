@@ -102,8 +102,10 @@ class MultiDeviceSmoke {
                     Check(previewImage.GetPixel(200,225).R>220 && previewImage.GetPixel(670,60).G>220,"Scaled preview lost a camera");
                 }
                 var cards=(Panel)Field(form,"phoneCards");
-                foreach(Control row in cards.Controls)Check(row.Controls.Count==1,"Phone row must contain only its name");
+                foreach(Control row in cards.Controls)Check(row.Controls.Count==2,"Phone row must contain its name and battery");
                 foreach(Control row in cards.Controls)if((string)row.Tag=="b")((Button)row.Controls[0]).PerformClick();
+                Check((string)Field(form,"mainDeviceId")=="a","Selecting a card changed camera roles");
+                Call(form,"MakeMainPhone","b");
                 using(var g=Graphics.FromImage(image)){g.Clear(Color.Black);scene.RenderScene(g,1920,1080);}
                 Check(image.GetPixel(500,500).G>220 && image.GetPixel(1600,150).R>220,"Main/secondary swap failed");
             }

@@ -13,7 +13,7 @@ namespace ApexCam
             public PhoneDeviceInfo Info;
             public ObsLayer Layer;
             public bool Connected;
-            public int Battery, Fps;
+            public int Battery=-1, Fps;
             public bool? Portrait;
             public float Temperature;
             public bool Charging;
@@ -61,7 +61,7 @@ namespace ApexCam
         }
         private void AddPhoneLayer(ObsLayer layer,bool main){
             var existing=scene.GetLayersSnapshot();scene.AddLayer(layer);
-            int behind=main?existing.Count:existing.FindAll(l=>l.Type!=SourceType.Camera).Count;
+            int behind=main?existing.Count:0;
             for(int i=0;i<behind;i++)scene.MoveDown(layer);
         }
         private void HandlePhoneConnected(PhoneDeviceInfo info)
@@ -95,7 +95,7 @@ namespace ApexCam
         }
         private void HandlePhoneDisconnected(string id)
         {
-            lock(devicesGate) {PhoneSlot slot;if(phoneSlots.TryGetValue(id,out slot)){slot.Connected=false;slot.Layer.SetCameraFrame(null);}}
+            lock(devicesGate) {PhoneSlot slot;if(phoneSlots.TryGetValue(id,out slot)){slot.Connected=false;slot.Battery=-1;slot.Charging=false;slot.Layer.SetCameraFrame(null);}}
             if(controlledDeviceId==id) {
                 connectedPhoneHost=null;cameraCatalogGeneration++;
                 cameraPicker.Text="Phone disconnected";
@@ -156,14 +156,25 @@ namespace ApexCam
             if(phoneCards==null)return;
             while(phoneCards.Controls.Count>0)phoneCards.Controls[0].Dispose();
             PhoneSlot[] slots;lock(devicesGate){slots=new PhoneSlot[phoneSlots.Count];phoneSlots.Values.CopyTo(slots,0);}
+            var order=scene.GetLayersSnapshot();
+            Array.Sort(slots,(a,b)=>order.IndexOf(a.Layer).CompareTo(order.IndexOf(b.Layer)));
             int at=0;
             foreach(var slot in slots) {
                 var row=new Panel {BackColor=ColorHeaderBg,Tag=slot.Info.Id};
                 var name=CreateModernButton(FriendlyPhoneName(slot.Info),
                     controlledDeviceId==slot.Info.Id?ColorAccentCyan:ColorButtonDark,0,0,100,27);
+                bool dragged=false;Point dragOrigin=Point.Empty;
+                name.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragOrigin=e.Location;dragged=false;}};
+                name.MouseMove+=(s,e)=>{
+                    if(e.Button!=MouseButtons.Left||dragged)return;
+                    var threshold=new Rectangle(dragOrigin.X-SystemInformation.DragSize.Width/2,dragOrigin.Y-SystemInformation.DragSize.Height/2,SystemInformation.DragSize.Width,SystemInformation.DragSize.Height);
+                    if(threshold.Contains(e.Location))return;
+                    dragged=true;name.DoDragDrop(new CameraOrderDrag{Owner=this,Id=slot.Info.Id},DragDropEffects.Move);
+                };
+                BindCameraDrop(row,slot.Info.Id);BindCameraDrop(name,slot.Info.Id);
                 name.Click += (s,e) => {
+                    if(dragged)return;
                     if(slot.Layer.IsDisposed) {slot.Layer=CreatePhoneLayer(slot.Info,slot.Info.Id==mainDeviceId,0);scene.AddLayer(slot.Layer);}
-                    if(slot.Connected)MakeMainPhone(slot.Info.Id);
                     SelectControlledPhone(slot.Info.Id);
                 };
                 name.FlatAppearance.BorderColor=mainDeviceId==slot.Info.Id ? ColorAccentEmerald : ColorCardBorder;
@@ -171,11 +182,16 @@ namespace ApexCam
                 name.AutoEllipsis=true;
                 name.TextAlign=ContentAlignment.MiddleLeft;
                 sourceToolTips.SetToolTip(name,(slot.Connected?"":"Offline. ")+
-                    "Click to make "+FriendlyPhoneName(slot.Info)+" the main camera. Right-click for camera controls and rename.");
+                    "Drag to reorder cameras: top is in front. Click to select. Right-click for properties and controls.");
                 row.Controls.Add(name);
+                var battery=new PhoneBatteryIndicator {Name="PhoneBattery",BackColor=ColorHeaderBg,ForeColor=ColorTextPrimary,Font=name.Font,Tag=slot.Info.Id};
+                battery.Visible=!IsLocalCamera(slot.Info.Id);
+                row.Controls.Add(battery);BindCameraDrop(battery,slot.Info.Id);
                 var menu=new ContextMenuStrip();
                 var mainItem=new ToolStripMenuItem("Use as main camera") {Checked=mainDeviceId==slot.Info.Id,Enabled=slot.Connected};
                 mainItem.Click += (s,e) => {MakeMainPhone(slot.Info.Id);SelectControlledPhone(slot.Info.Id);};
+                menu.Items.Add("Properties...",null,(s,e)=>{SelectControlledPhone(slot.Info.Id);ShowSourceProperties();});
+                menu.Items.Add("Show / hide",null,(s,e)=>{slot.Layer.Visible=!slot.Layer.Visible;CommitSceneEdit();RefreshPhoneCards();});
                 menu.Items.Add(mainItem);
                 menu.Items.Add("Rename phone...",null,(s,e) => RenamePhone(slot.Info));
                 menu.Items.Add("Camera / lens...",null,(s,e) => {
@@ -195,15 +211,87 @@ namespace ApexCam
                 });
                 var remove=menu.Items.Add("Remove offline phone",null,(s,e) => RemoveOfflinePhone(slot.Info.Id));
                 remove.Enabled=!slot.Connected;
-                ApplyMenuTheme(menu);row.ContextMenuStrip=name.ContextMenuStrip=menu;
+                ApplyMenuTheme(menu);row.ContextMenuStrip=name.ContextMenuStrip=battery.ContextMenuStrip=menu;
                 row.Disposed += (s,e) => menu.Dispose();
                 row.Top=at++*32;row.Height=29;
                 phoneCards.Controls.Add(row);
             }
             int required=slots.Length==0?480:Math.Max(480,515+slots.Length*32);
             MinimumSize=new Size(640,required);
-            LayoutStudioDocks();
+            LayoutStudioDocks();RefreshPhoneBatteryIndicators();
         }
+        private sealed class PhoneBatteryIndicator : Control {
+            public int Level {get;private set;}
+            public bool Charging {get;private set;}
+            public bool Connected {get;private set;}
+            public PhoneBatteryIndicator(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);Level=-2;AccessibleRole=AccessibleRole.StaticText;}
+            public bool UpdateStatus(int level,bool charging,bool connected){
+                level=level<0?-1:Math.Min(100,level);
+                if(Level==level&&Charging==charging&&Connected==connected)return false;
+                Level=level;Charging=charging;Connected=connected;
+                AccessibleName=!connected?"Phone offline":level<0?"Battery unavailable":level+" percent battery"+(charging?", charging":"");
+                Invalidate();return true;
+            }
+            protected override void OnPaint(PaintEventArgs e){
+                var g=e.Graphics;g.Clear(BackColor);g.SmoothingMode=SmoothingMode.AntiAlias;
+                Color color=!Connected||Level<0?ColorTextSecondary:Level<=15?ColorAccentRed:Level<=30?ColorAccentAmber:ColorAccentEmerald;
+                int y=(Height-12)/2;
+                using(var outline=new Pen(color,1.3f))using(var fill=new SolidBrush(color)){
+                    g.DrawRectangle(outline,3,y,21,12);g.FillRectangle(fill,25,y+4,2,4);
+                    if(Connected&&Level>=0)g.FillRectangle(fill,5,y+2,17*Level/100f,8);
+                }
+                if(Connected&&Charging)using(var bolt=new SolidBrush(Color.White))using(var shadow=new Pen(ColorHeaderBg,2)){
+                    var points=new[]{new Point(16,y-2),new Point(9,y+7),new Point(14,y+7),new Point(11,y+15),new Point(20,y+4),new Point(15,y+4)};
+                    g.DrawPolygon(shadow,points);g.FillPolygon(bolt,points);
+                }
+                TextRenderer.DrawText(g,!Connected?"Offline":Level<0?"N/A":Level+"%",Font,new Rectangle(31,0,Math.Max(1,Width-31),Height),Connected?ForeColor:ColorTextSecondary,TextFormatFlags.VerticalCenter|TextFormatFlags.Right|TextFormatFlags.NoPadding);
+            }
+        }
+        private void RefreshPhoneBatteryIndicators(){
+            if(phoneCards==null)return;
+            foreach(Control row in phoneCards.Controls){
+                if(row.Controls.Count<2)continue;
+                var indicator=row.Controls[1] as PhoneBatteryIndicator;if(indicator==null||!indicator.Visible)continue;
+                int level;bool charging,connected;PhoneSlot slot;
+                lock(devicesGate){if(!phoneSlots.TryGetValue((string)row.Tag,out slot))continue;level=slot.Battery;charging=slot.Charging;connected=slot.Connected;}
+                if(slot.Info.Id.StartsWith("web:"))level=-1; // Safari does not expose device battery telemetry.
+                if(indicator.UpdateStatus(level,charging,connected))sourceToolTips.SetToolTip(indicator,indicator.AccessibleName);
+            }
+        }
+        private sealed class CameraOrderDrag {public MainForm Owner;public string Id;}
+        private bool ReorderPhoneCards(string moving,string target,bool after) {
+            PhoneSlot source,destination;
+            lock(devicesGate){if(!phoneSlots.TryGetValue(moving,out source)||!phoneSlots.TryGetValue(target,out destination))return false;}
+            return scene.ReorderCamera(source.Layer,destination.Layer,after);
+        }
+        private void BindCameraDrop(Control control,string target) {
+            control.AllowDrop=true;
+            Action<int> marker=edge=>{
+                var row=control is Panel?control:control.Parent;
+                var button=row!=null&&row.Controls.Count>0?row.Controls[0] as StudioButton:null;
+                if(button!=null&&button.DragInsertionEdge!=edge){button.DragInsertionEdge=edge;button.Invalidate();}
+            };
+            control.DragLeave+=(s,e)=>marker(0);
+            control.DragEnter+=(s,e)=>{
+                var data=e.Data.GetData(typeof(CameraOrderDrag)) as CameraOrderDrag;
+                e.Effect=data!=null&&data.Owner==this&&data.Id!=target?DragDropEffects.Move:DragDropEffects.None;
+            };
+            control.DragOver+=(s,e)=>{
+                var data=e.Data.GetData(typeof(CameraOrderDrag)) as CameraOrderDrag;
+                e.Effect=data!=null&&data.Owner==this&&data.Id!=target?DragDropEffects.Move:DragDropEffects.None;
+                marker(e.Effect==DragDropEffects.None?0:control.PointToClient(new Point(e.X,e.Y)).Y<control.Height/2?-1:1);
+            };
+            control.DragDrop+=(s,e)=>{
+                marker(0);
+                var data=e.Data.GetData(typeof(CameraOrderDrag)) as CameraOrderDrag;
+                if(data==null||data.Owner!=this)return;
+                bool after=control.PointToClient(new Point(e.X,e.Y)).Y>=control.Height/2;
+                if(!ReorderPhoneCards(data.Id,target,after))return;
+                // Commit once on drop; dragging does not issue network commands or save repeatedly.
+                BeginInvoke((Action)(()=>{RefreshPhoneCards();CommitSceneEdit();}));
+            };
+        }
+
         private void RemoveOfflinePhone(string id)
         {
             PhoneSlot slot;
@@ -228,7 +316,9 @@ namespace ApexCam
             phoneCards.SetBounds(4,167,width,count*32);
             foreach(Control row in phoneCards.Controls) {
                 row.Width=width;
-                row.Controls[0].SetBounds(0,1,width,27);
+                int badge=row.Controls.Count>1 && !IsLocalCamera((string)row.Tag)?80:0;
+                row.Controls[0].SetBounds(0,1,Math.Max(40,width-badge-4),27);
+                if(row.Controls.Count>1)row.Controls[1].SetBounds(width-badge,1,badge,27);
             }
             LayoutPairingQr(width,count);
         }
@@ -254,7 +344,7 @@ namespace ApexCam
                 }
                 slot.Layer.SetCameraFrame(filtered);
             }
-            slot.Battery=battery;slot.Fps=fps;slot.Temperature=temp;slot.Charging=charging;
+            lock(devicesGate){slot.Battery=battery;slot.Fps=fps;slot.Temperature=temp;slot.Charging=charging;}
             if(id==mainDeviceId){batteryPercent=battery;phoneFps=fps;deviceTemp=temp;isPhoneCharging=charging;latencyMs=rtt;}
         }
         private void ComposeDevices()

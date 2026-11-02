@@ -6,6 +6,10 @@ LensioCam turns Android phones into wireless webcams. LensioStudio brings phones
 
 Lensio shares its blue/violet app identity across Windows and Android. Disconnected camera sources and the standalone virtual camera display the Lensio no-signal artwork. Select **LensioCam** in video apps; **OBS Virtual Camera** remains a separate device.
 
+Camera cards live above the pairing QR. Drag a card above or below another card to change camera stacking: the top card is drawn in front. Clicking selects a camera for editing without changing its position or size. Images, text, clocks and other overlays stay in **Sources**, always above all cameras. The order survives reconnects and app restarts. Right-click a camera card for properties, visibility and device controls.
+
+Android camera cards show their reported battery percentage and a lightning indicator while charging. Offline devices are marked **Offline**; browser cameras without battery telemetry show **N/A**. Battery refresh uses existing telemetry and does not poll the phones or rebuild the cards.
+
 - Use up to four phones over Wi-Fi or USB (ADB).
 - Add a built-in laptop camera or USB webcam alongside your phones.
 - Move, crop, rotate and align sources; add images, text and clocks.
@@ -36,7 +40,7 @@ Windows 10/11 x64 and Android 8+ are required. The single Windows EXE embeds the
 
 The native Android camera follows the phone's physical orientation, including portrait, landscape and upside-down. Camera capture remains bound while orientation changes; the sensor is stopped when the camera service is released. The Windows camera source adjusts its aspect ratio around its current center while overlays stay on the scene canvas. Web-phone sources also follow the dimensions received from the browser.
 
-Use **Sources → Add → PC / laptop webcam...** to choose a Windows webcam. Each selected webcam opens once, shares the existing scene compositor and reconnects from the saved workspace. Removing its source or closing LensioStudio releases capture. Windows camera privacy settings apply; no administrator permission is needed. LensioCam's own virtual output and OBS Virtual Camera are excluded to prevent direct feedback. Webcam frames stay local and are not JPEG-encoded or sent through the phone network protocol. Capture requests a supported mode near the current studio resolution and 30 FPS; actual delivery depends on the camera, driver and exposure conditions.
+Use **Sources → Add → PC / laptop webcam...** to choose a Windows webcam. Each selected webcam opens once, shares the existing scene compositor and reconnects from the saved workspace. Right-click its camera card and choose **Remove webcam**, or close LensioStudio, to release capture. Windows camera privacy settings apply; no administrator permission is needed. LensioCam's own virtual output and OBS Virtual Camera are excluded to prevent direct feedback. Webcam frames stay local and are not JPEG-encoded or sent through the phone network protocol. Capture requests a supported mode near the current studio resolution and 30 FPS; actual delivery depends on the camera, driver and exposure conditions.
 
 Drag a source to move it. Magnetic guides align visible edges and centers with the canvas and other visible sources. Resize handles also align edges on unrotated sources; camera corners preserve their aspect ratio. Snap targets are collected once at drag start, with no network polling or per-move saves. Hold **Alt** while moving to bypass snapping, or disable **Image → Magnetic snapping**.
 

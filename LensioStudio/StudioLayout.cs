@@ -50,6 +50,7 @@ namespace ApexCam
     internal sealed class StudioButton : Button
     {
         private bool hovered,pressed;
+        public int DragInsertionEdge;
         public StudioButton(){SetStyle(ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
         protected override void OnMouseEnter(EventArgs e){hovered=true;Invalidate();base.OnMouseEnter(e);}
         protected override void OnMouseLeave(EventArgs e){hovered=pressed=false;Invalidate();base.OnMouseLeave(e);}
@@ -65,7 +66,8 @@ namespace ApexCam
                 e.Graphics.FillPath(brush,path);e.Graphics.DrawPath(pen,path);
             }
             TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(4,1,Math.Max(0,Width-8),Height-2),Enabled?ForeColor:Color.FromArgb(143,154,177),
-                TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
+                (TextAlign==ContentAlignment.MiddleLeft?TextFormatFlags.Left:TextFormatFlags.HorizontalCenter)|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
+            if(DragInsertionEdge!=0)using(var marker=new Pen(Color.FromArgb(151,187,255),3))e.Graphics.DrawLine(marker,3,DragInsertionEdge<0?2:Height-3,Width-3,DragInsertionEdge<0?2:Height-3);
             if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,new Rectangle(4,4,Width-8,Height-8),ForeColor,fill);
         }
     }
@@ -314,7 +316,7 @@ namespace ApexCam
                                 sourceToolTips.SetToolTip(button,hints[i]);
                                 if(i<2) button.SetBounds(i*(width/2),2,width/2-3,26);
                                 else button.SetBounds((i-2)*(width/3),31,width/3-3,26);
-                                button.Enabled = i == 0 || selectedLayer != null;
+                                button.Enabled = i == 0 || (selectedLayer != null && selectedLayer.Type!=SourceType.Camera);
                                 i++;
                             }
                         }

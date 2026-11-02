@@ -357,6 +357,7 @@ namespace ApexCam
                 if (panelTelemetry != null) panelTelemetry.Invalidate();
                 UpdateAudioStatusLabel();
                 RefreshStudioStatus();
+                RefreshPhoneBatteryIndicators();
                 if(isConnected && ++cameraPollTicks % 5 == 0) RefreshCameraCatalog(false);
 
             };
@@ -736,7 +737,7 @@ namespace ApexCam
             lbSources.SelectedIndexChanged += (s, e) =>
             {
                 if (refreshingSources) return;
-                var layers = scene.GetLayersSnapshot();
+                var layers = scene.GetLayersSnapshot().FindAll(layer=>layer.Type!=SourceType.Camera);
                 int sourceIndex = sourcePage * sourcePageSize + lbSources.SelectedIndex;
                 if (lbSources.SelectedIndex >= 0 && sourceIndex < layers.Count)
                 {
@@ -916,7 +917,7 @@ namespace ApexCam
             if (lbSources == null || refreshingSources) return;
             refreshingSources = true;
             try {
-                var layers = scene.GetLayersSnapshot();
+                var layers = scene.GetLayersSnapshot().FindAll(layer=>layer.Type!=SourceType.Camera);
                 sourcePageSize = Math.Max(1,lbSources.ClientSize.Height / Math.Max(1,lbSources.ItemHeight));
                 int selectedIndex = layers.IndexOf(selectedLayer);
                 if (selectedIndex >= 0) sourcePage = selectedIndex / sourcePageSize;
@@ -941,7 +942,7 @@ namespace ApexCam
             foreach(Control bar in dockSources.Controls) {
                 if(bar is Panel && bar.Dock == DockStyle.Bottom)
                     for(int i=0;i<bar.Controls.Count;i++) {
-                        bar.Controls[i].Enabled = i == 0 || selectedLayer != null;
+                        bar.Controls[i].Enabled = i == 0 || (selectedLayer != null && selectedLayer.Type!=SourceType.Camera);
                         if(i==4) bar.Controls[i].Text = selectedLayer != null && !selectedLayer.Visible ? "Show" : "Hide";
                     }
             }

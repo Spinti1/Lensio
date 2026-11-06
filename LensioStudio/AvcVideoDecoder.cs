@@ -19,6 +19,8 @@ namespace ApexCam {
   public bool IsHardware {get{return hardware(handle)!=0;}}
   public static bool Available {get{try{EnsureLoaded();return true;}catch{return false;}}}
   static T Bind<T>(string name){IntPtr symbol=GetProcAddress(module,name);if(symbol==IntPtr.Zero)throw new InvalidDataException("Missing video codec entry point");return (T)(object)Marshal.GetDelegateForFunctionPointer(symbol,typeof(T));}
+  // Pixel acceleration shares the embedded, hash-verified runtime. No PATH/DLL search or download.
+  internal static T LoadPixelKernel<T>(string name) where T:class {try{EnsureLoaded();return Bind<T>(name);}catch{return null;}}
   static void EnsureLoaded(){lock(gate){if(module!=IntPtr.Zero)return;
    byte[] data;using(var stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("LensioRuntime.lensio-codec64.dll")){if(stream==null)throw new NotSupportedException("AVC runtime unavailable");using(var bytes=new MemoryStream()){stream.CopyTo(bytes);data=bytes.ToArray();}}
    string hash;using(var sha=SHA256.Create())hash=BitConverter.ToString(sha.ComputeHash(data)).Replace("-","");

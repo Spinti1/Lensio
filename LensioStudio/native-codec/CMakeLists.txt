@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(LensioVideoCodec LANGUAGES CXX)
-add_library(lensio-codec64 SHARED AvcDecoder.cpp)
+add_library(lensio-codec64 SHARED AvcDecoder.cpp PixelKernels.cpp)
 target_compile_features(lensio-codec64 PRIVATE cxx_std_17)
 set_property(TARGET lensio-codec64 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 target_compile_definitions(lensio-codec64 PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)

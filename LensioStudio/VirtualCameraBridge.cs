@@ -13,6 +13,9 @@ namespace ApexCam
 {
     public class VirtualCameraBridge : IDisposable
     {
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int NativeNv12(IntPtr src,int stride,int width,int height,IntPtr dst,int capacity);
+        private static readonly NativeNv12 nativeNv12=AvcVideoDecoder.LoadPixelKernel<NativeNv12>("LensioBgraToNv12");
         private MemoryMappedFile mmfLegacy;
         private MemoryMappedViewAccessor accessorLegacy;
 
@@ -354,6 +357,7 @@ namespace ApexCam
 
                 fixed (byte* outPtr = outputNv12)
                 {
+                    if(nativeNv12!=null && nativeNv12(bmpData.Scan0,bmpData.Stride,safeWidth,safeHeight,(IntPtr)outPtr,outputNv12.Length)==0)return;
                     byte* yPlane = outPtr;
                     byte* uvPlane = outPtr + (safeWidth * safeHeight);
                     byte* src = (byte*)bmpData.Scan0.ToPointer();

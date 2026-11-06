@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 namespace ApexCam {
     // Full-resolution bilinear scaling. Cache coordinate maps and reuse the output surface.
@@ -9,6 +10,10 @@ namespace ApexCam {
         public Bitmap Output {get{return output;}}
         private int sourceWidth,sourceHeight;
         private int[] left,right,weight,top,bottom,verticalWeight;
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int NativeScale(IntPtr src,int sw,int sh,int stride,IntPtr dst,int width,int height,int dstStride,
+            IntPtr left,IntPtr right,IntPtr weights,IntPtr top,IntPtr bottom,IntPtr vertical,int start,int end,int alpha);
+        private static readonly NativeScale nativeScale=AvcVideoDecoder.LoadPixelKernel<NativeScale>("LensioScaleBgra");
         public unsafe Bitmap Scale(Bitmap source,int width,int height,float opacity) {
             if(output==null || output.Width!=width || output.Height!=height ||
                 sourceWidth!=source.Width || sourceHeight!=source.Height) {
@@ -24,7 +29,11 @@ namespace ApexCam {
                 input=source.LockBits(new Rectangle(0,0,source.Width,source.Height),ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb);
                 target=output.LockBits(new Rectangle(0,0,width,height),ImageLockMode.WriteOnly,PixelFormat.Format32bppPArgb);
                 IntPtr src=input.Scan0,dst=target.Scan0;int srcStride=input.Stride,dstStride=target.Stride;
+                fixed(int* l=left,r=right,w=weight,t=top,b=bottom,v=verticalWeight) {
+                IntPtr lp=(IntPtr)l,rp=(IntPtr)r,wp=(IntPtr)w,tp=(IntPtr)t,bp=(IntPtr)b,vp=(IntPtr)v;
                 Parallel.For(0,(height+31)/32,new ParallelOptions {MaxDegreeOfParallelism=Math.Min(4,Environment.ProcessorCount)},batch => {
+                    int end=Math.Min(height,batch*32+32);
+                    if(nativeScale!=null && nativeScale(src,sourceWidth,sourceHeight,srcStride,dst,width,height,dstStride,lp,rp,wp,tp,bp,vp,batch*32,end,alpha)==0)return;
                     for(int y=batch*32;y<Math.Min(height,batch*32+32);y++) {
                         byte* row0=(byte*)src+top[y]*srcStride;
                         byte* row1=(byte*)src+bottom[y]*srcStride;
@@ -43,6 +52,7 @@ namespace ApexCam {
                         }
                     }
                 });
+                }
             } finally {
                 if(target!=null)output.UnlockBits(target);
                 if(input!=null)source.UnlockBits(input);

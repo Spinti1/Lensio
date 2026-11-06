@@ -18,7 +18,11 @@ class ScenePipelineSmoke {
  static object Call(MainForm f,string n,params object[] a){return typeof(MainForm).GetMethod(n,BindingFlags.Instance|BindingFlags.NonPublic).Invoke(f,a);}
  static void Check(bool b,string m){if(!b)throw new Exception(m);}
  static int Rate(MainForm f,string n){object rate=Get(f,n);return (int)rate.GetType().GetProperty("Value").GetValue(rate,null);}
- [STAThread]static int Main(){
+ [STAThread]static int Main(string[] args){
+  if(args.Length==1&&args[0]=="--managed"){
+   typeof(MainForm).Assembly.GetType("ApexCam.CameraFrameScaler").GetField("nativeScale",BindingFlags.NonPublic|BindingFlags.Static).SetValue(null,null);
+   typeof(VirtualCameraBridge).GetField("nativeNv12",BindingFlags.NonPublic|BindingFlags.Static).SetValue(null,null);
+  }
   Application.EnableVisualStyles();var f=new PipelineForm();f.ShowInTaskbar=false;f.StartPosition=FormStartPosition.Manual;f.Location=new Point(-10000,-10000);f.Show();
   foreach(string n in new[]{"tbExposure","tbBrightness","tbContrast","tbSaturation"})Check(((TrackBar)Get(f,n)).Value==0,"Non-neutral filter after creating window: "+n);
   foreach(var size in new[]{new Size(640,540),new Size(1400,850)}){f.Size=size;Application.DoEvents();foreach(string n in new[]{"tbExposure","tbBrightness","tbContrast","tbSaturation"})Check(((TrackBar)Get(f,n)).Value==0,"Resize changed filter: "+n);}
@@ -40,8 +44,9 @@ class ScenePipelineSmoke {
   Check(lease.GetPixel(100,100).ToArgb()==pixel.ToArgb(),"Retained preview surface was overwritten");
   Call(f,"ReleasePreviewFrame",lease);
   Exception error=null;int submitted=0;double filterMs=0;var sender=new Thread(()=>{try{var clock=Stopwatch.StartNew();for(int i=0;i<450;i++){double next=i*1000.0/30;while(clock.Elapsed.TotalMilliseconds<next)Thread.Sleep(1);long at=Stopwatch.GetTimestamp();Call(f,"ProcessDeviceFrame","test",source,80,false,27f,30,0);filterMs+=(Stopwatch.GetTimestamp()-at)*1000.0/Stopwatch.Frequency;submitted++;}}catch(Exception e){error=e;}}){IsBackground=true};sender.Start();
-  int sceneLow=100,cameraLow=100;var watch=Stopwatch.StartNew();long sampled=0;
+  int sceneLow=100,cameraLow=100;var process=Process.GetCurrentProcess();var cpuStart=process.TotalProcessorTime;var watch=Stopwatch.StartNew();long sampled=0;
   while(sender.IsAlive){Application.DoEvents();if(watch.ElapsedMilliseconds>5000&&watch.ElapsedMilliseconds-sampled>1000){sampled=watch.ElapsedMilliseconds;int s=Rate(f,"sceneFrameRate"),c=Rate(f,"cameraFrameRate");sceneLow=Math.Min(sceneLow,s);cameraLow=Math.Min(cameraLow,c);Console.WriteLine("Scene="+s+" Camera="+c);}Thread.Sleep(2);}
+  Console.WriteLine("Pipeline CPU="+((process.TotalProcessorTime-cpuStart).TotalMilliseconds/watch.Elapsed.TotalMilliseconds*100/Environment.ProcessorCount).ToString("F2")+"% across "+Environment.ProcessorCount+" logical CPUs; private="+(process.PrivateMemorySize64/1048576.0).ToString("F1")+"MiB");process.Dispose();
   Call(f,"StopDeviceComposition");((System.Windows.Forms.Timer)Get(f,"heartbeatTimer")).Stop();((NotifyIcon)Get(f,"trayIcon")).Dispose();f.Dispose();source.Dispose();if(error!=null)throw error;
   Console.WriteLine("Frames="+submitted+" mean filter/copy ms="+(filterMs/submitted).ToString("F2"));Check(sceneLow>=28,"Scene too slow: "+sceneLow);Check(cameraLow>=28,"Camera too slow: "+cameraLow);Console.WriteLine("PASS neutral startup/resize and 15s 1080p scene with eight large image overlays");return 0;
  }

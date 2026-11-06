@@ -2,7 +2,7 @@
 
 **Your cameras. One Windows studio.**
 
-**2.11.5:** native Android clients can negotiate H.264 hardware encoding with LensioStudio. CameraX feeds one GPU texture stream to the MediaCodec encoder and local preview. Windows uses its inbox Media Foundation H.264 decoder, with D3D11 acceleration when available and software decoding otherwise. JPEG remains the compatibility fallback; web/iPhone clients retain their existing WebRTC path. No new permissions or external codec installer are required.
+**2.11.6:** lower desktop CPU use through SSE2 frame scaling and virtual-camera conversion, with identical pixels and unchanged resolution/FPS. Android clients use H.264 hardware encoding from a shared CameraX GPU texture, and Windows uses Media Foundation with D3D11 decoding when available. JPEG remains the compatibility fallback; web/iPhone clients retain their existing WebRTC path. No new permissions or external codec installer are required.
 
 Validated using generated 720p/1080p H.264 streams, TCP reconnect/fallback tests, Android unit tests, and synthetic 1080p compositions with image overlays. A connected Galaxy A21s delivered 29–30 FPS using hardware H.264 and Windows D3D11 decoding, with corrected rotation confirmed in a phone test. The latest exposure and reconnect-recovery changes still need on-device confirmation; screen-off operation and JPEG/AVC quality comparisons remain unverified. Update both applications through their GitHub update checks to enable the new protocol. Older Android clients continue using JPEG.
 

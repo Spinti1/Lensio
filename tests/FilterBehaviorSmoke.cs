@@ -12,6 +12,18 @@ class FilterBehaviorSmoke {
     }
     static int Spread(Color c) { return Math.Max(c.R,Math.Max(c.G,c.B))-Math.Min(c.R,Math.Min(c.G,c.B)); }
     static int Main() {
+        foreach(var format in new[]{System.Drawing.Imaging.PixelFormat.Format24bppRgb,System.Drawing.Imaging.PixelFormat.Format32bppArgb,System.Drawing.Imaging.PixelFormat.Format32bppPArgb}){
+            using(var source=new Bitmap(30,14,format)){
+                Color expected=Color.FromArgb(format==System.Drawing.Imaging.PixelFormat.Format24bppRgb?255:140,210,90,30);
+                using(var g=Graphics.FromImage(source))g.Clear(expected);
+                using(var copy=VideoFilters.ApplyFiltersAndTransform(source,FilterMode.None,1,false,false,0,0,0,0,false,30,14)){
+                    Color before=source.GetPixel(10,5),actual=copy.GetPixel(10,5);
+                    Check(Math.Abs(actual.R-before.R)<=1&&Math.Abs(actual.G-before.G)<=1&&Math.Abs(actual.B-before.B)<=1&&actual.A==before.A,"Pixel copy changed color/alpha for "+format);
+                    using(var g=Graphics.FromImage(source))g.Clear(Color.Black);
+                    Check(copy.GetPixel(10,5).ToArgb()==actual.ToArgb(),"Frame copy still uses decoder-owned memory");
+                }
+            }
+        }
         Color input=Color.FromArgb(140,100,80);
         Color neutral=Render(input);
         Check(Math.Abs(neutral.R-input.R)<=1 && Math.Abs(neutral.G-input.G)<=1 && Math.Abs(neutral.B-input.B)<=1,"Neutral filters altered the image");

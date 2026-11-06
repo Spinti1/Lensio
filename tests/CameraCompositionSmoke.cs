@@ -6,6 +6,17 @@ class CameraCompositionSmoke {
     static Bitmap Frame(Color color){var b=new Bitmap(2,2);using(var g=Graphics.FromImage(b))g.Clear(color);return b;}
     static Bitmap Render(ObsLayer layer,int width,int height){var b=new Bitmap(width,height);using(var g=Graphics.FromImage(b)){g.Clear(Color.Blue);layer.RenderCamera(g,1,1);}return b;}
     static int Main(){
+        using(var layer=new ObsLayer{Type=SourceType.Camera,Width=2,Height=2}){
+            layer.SetCameraFrame(Frame(Color.Red));layer.SetCameraFrame(Frame(Color.Blue));
+            using(var output=Render(layer,2,2))Check(output.GetPixel(0,0).R==255,"Burst discarded the first unread camera frame");
+            using(var output=Render(layer,2,2))Check(output.GetPixel(0,0).B==255,"Burst did not retain the next camera frame");
+            layer.SetCameraFrame(Frame(Color.Red));layer.SetCameraFrame(Frame(Color.Lime));layer.SetCameraFrame(Frame(Color.Blue));
+            using(var output=Render(layer,2,2))Check(output.GetPixel(0,0).G==255,"Overload did not discard the oldest camera frame");
+            using(var output=Render(layer,2,2))Check(output.GetPixel(0,0).B==255,"Overload lost the newest camera frame");
+            layer.SetCameraFrame(Frame(Color.Red));layer.SetCameraFrame(Frame(Color.Lime));layer.SetCameraFrame(null);
+            Check(layer.BitmapImage==null,"Disconnect retained stale camera pixels");
+            layer.SetCameraFrame(Frame(Color.Blue));using(var output=Render(layer,2,2))Check(output.GetPixel(0,0).B==255,"Reconnect showed stale queued frames");
+        }
         using(var layer=new ObsLayer {Type=SourceType.Camera,Width=4,Height=4}){
             var input=new Bitmap(2,2);input.SetPixel(0,0,Color.Black);input.SetPixel(1,0,Color.Red);input.SetPixel(0,1,Color.Lime);input.SetPixel(1,1,Color.Yellow);
             layer.SetCameraFrame(input);

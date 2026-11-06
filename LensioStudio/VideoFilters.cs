@@ -34,6 +34,7 @@ namespace ApexCam
         private ImageAttributes opaqueAttributes;
         private CameraFrameScaler cameraScaler;
         private long frameRevision,scaledRevision=-1,renderedRevision=-1;
+        private Bitmap pendingCameraFrame;
         public long RenderedRevision {get{return System.Threading.Interlocked.Read(ref renderedRevision);}}
         private int scaledWidth,scaledHeight;
         private float scaledOpacity;
@@ -52,8 +53,20 @@ namespace ApexCam
         public void SetCameraFrame(Bitmap frame) {
             lock(imageLock) {
                 if(IsDisposed) { if(frame!=null)frame.Dispose();return; }
+                if(Type==SourceType.Camera && frame!=null && BitmapImage!=null &&
+                    BitmapImage.Width==frame.Width && BitmapImage.Height==frame.Height && renderedRevision!=frameRevision) {
+                    // Absorb a burst of two arrivals between scene ticks, never an unbounded backlog.
+                    // On overload keep only the two newest frames and release the older pixels.
+                    if(pendingCameraFrame!=null){var skipped=BitmapImage;BitmapImage=pendingCameraFrame;frameRevision++;skipped.Dispose();}
+                    pendingCameraFrame=frame;return;
+                }
+                if(pendingCameraFrame!=null){pendingCameraFrame.Dispose();pendingCameraFrame=null;}
                 var old=BitmapImage;BitmapImage=frame;frameRevision++;if(old!=null)old.Dispose();
             }
+        }
+        private void CompleteCameraRender() {
+            System.Threading.Interlocked.Exchange(ref renderedRevision,frameRevision);
+            if(pendingCameraFrame!=null){var old=BitmapImage;BitmapImage=pendingCameraFrame;pendingCameraFrame=null;frameRevision++;old.Dispose();}
         }
         public string Id { get; set; }
         public string Name { get; set; }
@@ -136,7 +149,7 @@ namespace ApexCam
 
         public void Render(Graphics g, int canvasW, int canvasH)
         {
-            lock(imageLock) { if(!IsDisposed) RenderCore(g,canvasW,canvasH); }
+            lock(imageLock) { if(!IsDisposed){RenderCore(g,canvasW,canvasH);if(Type==SourceType.Camera&&Visible&&BitmapImage!=null&&Opacity>0)CompleteCameraRender();} }
         }
 
         public void RenderImage(Graphics g,float scaleX,float scaleY) {
@@ -177,7 +190,7 @@ namespace ApexCam
                 // Keep oversized off-canvas sources bounded; use the original renderer for extreme zooms.
                 if(rect.Width>8192 || rect.Height>8192) {
                     var state=g.Save();
-                    try{g.ScaleTransform(scaleX,scaleY);RenderCore(g,1920,1080);}finally{g.Restore(state);}
+                    try{g.ScaleTransform(scaleX,scaleY);RenderCore(g,1920,1080);CompleteCameraRender();}finally{g.Restore(state);}
                     return;
                 }
                 Bitmap image=(Bitmap)BitmapImage;
@@ -193,7 +206,7 @@ namespace ApexCam
                 try {
                     g.CompositingMode=Opacity>=1 ? CompositingMode.SourceCopy : CompositingMode.SourceOver;
                     g.DrawImageUnscaled(image,rect.Location);
-                    System.Threading.Interlocked.Exchange(ref renderedRevision,frameRevision);
+                    CompleteCameraRender();
                 } finally {g.CompositingMode=previous;}
             }
         }
@@ -330,6 +343,7 @@ namespace ApexCam
                 if(cameraScaler!=null){cameraScaler.Dispose();cameraScaler=null;}
                 if(imageCache!=null){imageCache.Dispose();imageCache=null;}imageCacheSource=null;
                 if(BitmapImage!=null)BitmapImage.Dispose();
+                if(pendingCameraFrame!=null){pendingCameraFrame.Dispose();pendingCameraFrame=null;}
                 BitmapImage=null;
             }
         }
@@ -463,6 +477,24 @@ namespace ApexCam
 
     public static class VideoFilters
     {
+        private static unsafe Bitmap CopyFrame(Bitmap source) {
+            // Bitmap(Image) draws through GDI+, serializing with preview/overlay drawing.
+            // Copy owned pixels instead; the decoder may reuse its input buffer immediately.
+            var result=new Bitmap(source.Width,source.Height,PixelFormat.Format32bppArgb);
+            BitmapData input=null,output=null;
+            try {
+                var area=new Rectangle(0,0,source.Width,source.Height);
+                input=source.LockBits(area,ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb);
+                output=result.LockBits(area,ImageLockMode.WriteOnly,PixelFormat.Format32bppArgb);
+                long rowBytes=source.Width*4L;
+                if(input.Stride==rowBytes && output.Stride==rowBytes)
+                    Buffer.MemoryCopy(input.Scan0.ToPointer(),output.Scan0.ToPointer(),rowBytes*source.Height,rowBytes*source.Height);
+                else for(int y=0;y<source.Height;y++)
+                    Buffer.MemoryCopy((byte*)input.Scan0+y*input.Stride,(byte*)output.Scan0+y*output.Stride,rowBytes,rowBytes);
+            }catch{if(output!=null){result.UnlockBits(output);output=null;}result.Dispose();throw;}
+            finally{if(output!=null)result.UnlockBits(output);if(input!=null)source.UnlockBits(input);}
+            return result;
+        }
         private static float smoothedAutoBrightness = 0.0f;
         private static float smoothedAutoContrast = 0.0f;
         private static int autoFrameCounter = 0;
@@ -499,7 +531,7 @@ namespace ApexCam
             {
                 if (srcW == targetW && srcH == targetH)
                 {
-                    return new Bitmap(source);
+                    return CopyFrame(source);
                 }
                 Bitmap scaled = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
                 using (Graphics g = Graphics.FromImage(scaled))

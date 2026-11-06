@@ -93,6 +93,7 @@ class CameraXManager(
     @Volatile private var cameraSelectionError = ""
     @Volatile private var previousCameraSelection: Pair<String?,CameraSettings>? = null
     @Volatile private var selectionFrames = 0
+    @Volatile private var activeFpsRange = "default"
 
     fun cameraCatalogJson(): String = com.google.gson.Gson().toJson(mapOf(
         "version" to com.apexcam.BuildConfig.VERSION_NAME,
@@ -101,6 +102,8 @@ class CameraXManager(
         "zoom" to settings.zoomRatio,
         "torch" to settings.isTorchOn,
         "stabilization" to stabilizationMode,
+        "targetFpsRange" to activeFpsRange,
+        "videoCodec" to if(hardwareRequested) "h264" else "jpeg",
         "error" to cameraSelectionError,
         "cameras" to CameraCatalog(context).read(findMainCameraId(), cameraIds)))
 
@@ -253,8 +256,10 @@ class CameraXManager(
             val ranges = Camera2CameraInfo.from(info)
                 .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                 ?: return null
-            // A fixed 30/30 range limits exposure to ~33ms and darkens low-light scenes.
-            ranges.filter { it.upper == settings.fps && it.lower < it.upper }.maxByOrNull { it.lower }
+            // Hardware capture targets real 30 FPS, rather than asking AE to vary down to 15.
+            // Keep AE/AWB enabled; older JPEG clients retain their exposure-friendly fallback.
+            (if(hardwareRequested)ranges.firstOrNull { it.lower==settings.fps && it.upper==settings.fps } else null)
+                ?: ranges.filter { it.upper == settings.fps && it.lower < it.upper }.maxByOrNull { it.lower }
                 ?: ranges.firstOrNull { it.lower == settings.fps && it.upper == settings.fps }
                 ?: ranges.filter { it.upper <= settings.fps }.maxByOrNull { it.upper }
         } catch (e: Exception) {
@@ -360,6 +365,7 @@ class CameraXManager(
 
         val selectedInfo = runCatching { cameraSelector.filter(provider.availableCameraInfos).firstOrNull() }.getOrNull()
         val targetFpsRange = getOptimalFpsRange(selectedInfo)
+        activeFpsRange=targetFpsRange?.toString() ?: "default"
         val focusModes = runCatching { selectedInfo?.let { Camera2CameraInfo.from(it)
             .getCameraCharacteristic(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) } }.getOrNull()
         val focusMode = when {

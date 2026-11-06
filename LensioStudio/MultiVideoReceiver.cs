@@ -12,7 +12,7 @@ namespace ApexCam
 {
     public sealed class PhoneDeviceInfo
     {
-        public string Id, Name, Host;
+        public string Id, Name, Host, Version;
     }
 
     // One bounded latest-frame decoder and command channel per phone.
@@ -79,7 +79,7 @@ namespace ApexCam
                 string host=endpoint.Address.ToString();
                 var stream=client.GetStream(); var magic=ReadExact(stream,4);
                 string id="legacy:"+host, name="Phone "+host;
-                byte[] first=magic;bool offersAvc=false;
+                byte[] first=magic;bool offersAvc=false;string version="unknown";
                 if(magic[0]==65 && magic[1]==80 && magic[2]==67 && magic[3]==73) {
                     int length=BitConverter.ToInt32(ReadExact(stream,4),0);
                     if(length<1 || length>4096)throw new InvalidDataException();
@@ -88,6 +88,7 @@ namespace ApexCam
                     if(!json.TryGetValue("id",out value) || !(value is string) || ((string)value).Length<1 || ((string)value).Length>128)throw new InvalidDataException();
                     id=(string)value;
                     if(json.TryGetValue("name",out value) && value is string)name=((string)value).Substring(0,Math.Min(80,((string)value).Length));
+                    if(json.TryGetValue("version",out value) && value is string && ((string)value).Length<=32 && System.Text.RegularExpressions.Regex.IsMatch((string)value,@"\A[0-9.]+\z"))version=(string)value;
                     object protocol,codecs;
                     if(json.TryGetValue("videoProtocol",out protocol)&&Convert.ToInt32(protocol)==1&&json.TryGetValue("codecs",out codecs)){
                         var list=codecs as System.Collections.IEnumerable;
@@ -95,7 +96,7 @@ namespace ApexCam
                     }
                     first=null;
                 } else if(magic[0]!=65 || magic[1]!=80 || magic[2]!=67 || magic[3]!=77)throw new InvalidDataException();
-                entry=new Entry {Info=new PhoneDeviceInfo{Id=id,Name=name,Host=host},Core=new VideoReceiverCore {DeviceLabel=id},Ticket=ticket};
+                entry=new Entry {Info=new PhoneDeviceInfo{Id=id,Name=name,Host=host,Version=version},Core=new VideoReceiverCore {DeviceLabel=id},Ticket=ticket};
                 Entry old=null;
                 lock(gate) {
                     pending.Remove(client);
@@ -131,6 +132,7 @@ namespace ApexCam
                 };
                 owner.Core.Adopt(client,first);
                 if(offersAvc&&AvcVideoDecoder.Available)owner.Core.SendControl("{\"videoCodec\":\"h264\",\"videoProtocol\":1}");
+                try{File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"app.log"),DateTime.Now+" - [Video] Phone version="+version+" AVC offered="+offersAvc+" decoder available="+AvcVideoDecoder.Available+Environment.NewLine);}catch{}
                 var added=OnDeviceConnected;if(added!=null)added(owner.Info);
                 var connectedEvent=OnDeviceConnectionStateChanged;if(connectedEvent!=null)connectedEvent(id,true);
                 var legacy=OnClientConnected;if(legacy!=null)legacy(host,endpoint.Port);

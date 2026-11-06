@@ -99,6 +99,7 @@ namespace ApexCam
         private Bitmap currentFrame = null;
         private CameraFrameScaler previewScaler;
         private Bitmap previewSource;
+        private Bitmap previewReadingFrame;
         private readonly object frameLock = new object();
         private bool isConnected = false;
 
@@ -1318,6 +1319,7 @@ namespace ApexCam
                 if (tbBrightness != null) tbBrightness.Value = 0;
                 if (tbContrast != null) tbContrast.Value = 0;
                 if (tbSaturation != null) tbSaturation.Value = 0;
+                CommitSceneEdit();
             };
             filterContent.Controls.Add(btnResetF);
 
@@ -1892,16 +1894,7 @@ namespace ApexCam
                 vcamBridge.WriteFrame(processed);
             }
 
-            Bitmap oldFrame = null;
-            lock (frameLock)
-            {
-                oldFrame = currentFrame;
-                currentFrame = processed;currentFrameRevision++;
-            }
-            if (oldFrame != null)
-            {
-                try { oldFrame.Dispose(); } catch { }
-            }
+            PublishSceneFrame(processed);
 
             bool telemetryChanged = (batteryPercent != battery) || (isPhoneCharging != isCharging) || (Math.Abs(deviceTemp - temp) >= 0.5f);
             batteryPercent = battery;
@@ -1926,21 +1919,42 @@ namespace ApexCam
         }
 
         private long currentFrameRevision,previewFrameRevision=-1;
+        private void RecycleSceneFrame(Bitmap frame) {
+            // Called under frameLock. A preview reader retains its surface until scaling ends.
+            if(frame==null)return;
+            if(!compositionStopped && compositionSpare==null)compositionSpare=frame;
+            else frame.Dispose();
+        }
+        private void PublishSceneFrame(Bitmap image) {
+            lock(frameLock){
+                var previous=currentFrame;currentFrame=image;currentFrameRevision++;
+                if(previous!=previewReadingFrame)RecycleSceneFrame(previous);
+            }
+        }
+        private Bitmap AcquirePreviewFrame(out long revision) {
+            revision=-1;
+            if(!System.Threading.Monitor.TryEnter(frameLock))return null;
+            try{revision=currentFrameRevision;previewReadingFrame=currentFrame;return currentFrame;}
+            finally{System.Threading.Monitor.Exit(frameLock);}
+        }
+        private void ReleasePreviewFrame(Bitmap image) {
+            lock(frameLock){previewReadingFrame=null;if(image!=currentFrame)RecycleSceneFrame(image);}
+        }
         public void RenderPreview(Graphics g, int width, int height)
         {
             if(width<=0||height<=0)return;
             g.Clear(Color.Black);
             float scale=Math.Min(width/1920f,height/1080f);int dw=(int)(1920*scale),dh=(int)(1080*scale),x=(width-dw)/2,y=(height-dh)/2;
             // Drawing handles never waits behind the compositor or a source's image lock.
-            bool entered=System.Threading.Monitor.TryEnter(frameLock);
-            if(entered)try{
-                if(currentFrame!=null&&dw>0&&dh>0){
+            long revision;var preview=AcquirePreviewFrame(out revision);
+            if(preview!=null)try{
+                if(dw>0&&dh>0){
                     if(previewScaler==null)previewScaler=new CameraFrameScaler();
-                    if(previewFrameRevision!=currentFrameRevision || !object.ReferenceEquals(previewSource,currentFrame) || previewScaler.Output==null || previewScaler.Output.Width!=dw || previewScaler.Output.Height!=dh){
-                        previewScaler.Scale(currentFrame,dw,dh,1f);previewSource=currentFrame;previewFrameRevision=currentFrameRevision;
+                    if(previewFrameRevision!=revision || !object.ReferenceEquals(previewSource,preview) || previewScaler.Output==null || previewScaler.Output.Width!=dw || previewScaler.Output.Height!=dh){
+                        previewScaler.Scale(preview,dw,dh,1f);previewSource=preview;previewFrameRevision=revision;
                     }
                 }
-            }finally{System.Threading.Monitor.Exit(frameLock);}
+            }finally{ReleasePreviewFrame(preview);}
             if(previewScaler!=null&&previewScaler.Output!=null)g.DrawImageUnscaled(previewScaler.Output,x,y);
             else LensioBrand.DrawNoSignal(g,new Rectangle(x,y,dw,dh));
             DrawSelection(g);

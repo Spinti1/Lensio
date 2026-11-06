@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -209,12 +210,14 @@ fun CameraScreen(
             }
         )
 
-        // Floating OTA Wi-Fi Update Card
+        // Release notes may be arbitrarily long. Keep the install action independent of them.
         if (availableUpdate != null) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 60.dp, start = 16.dp, end = 16.dp)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp, start = 12.dp, end = 12.dp)
+                    .widthIn(max = 420.dp)
                     .fillMaxWidth()
                     .background(
                         color = Color(0xF20F172A),
@@ -232,7 +235,10 @@ fun CameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Update available (v${availableUpdate.versionName})",
+                            text = "LensioCam ${availableUpdate.versionName}",
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = Color(0xFF8CABFF),
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold
@@ -250,7 +256,9 @@ fun CameraScreen(
                     }
 
                     Text(
-                        text = availableUpdate.releaseNotes.ifBlank { "A new LensioCam version is available on GitHub. Downloads are verified by size and SHA-256; Android will ask you to confirm installation." },
+                        text = "Update available · ${java.lang.String.format(java.util.Locale.US, "%.1f", availableUpdate.apkSize / 1048576.0)} MB",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = Color(0xFFCBD5E1),
                         fontSize = 11.5.sp
                     )

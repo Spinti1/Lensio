@@ -182,8 +182,8 @@ namespace ApexCam
                         CurrentFps = framesCount;
                         try
                         {
-                            File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.log"), string.Format("{0} - [FrameStats] Phone: "+DeviceLabel+" Res: {1}x{2}, Size: {3:0.0}KB, PhoneFps: {4}, PcFps: {5}, Battery: {6}, Temp: {7:0.0}C\n",
-                                DateTime.Now, width, height, payloadLength / 1024.0f, phoneFps, CurrentFps, battery, temp));
+                            File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.log"), string.Format("{0} - [FrameStats] Phone: "+DeviceLabel+" Res: {1}x{2}, Size: {3:0.0}KB, PhoneFps: {4}, PcFps: {5}, Battery: {6}, Temp: {7:0.0}C, Codec: {8}\n",
+                                DateTime.Now, width, height, payloadLength / 1024.0f, phoneFps, CurrentFps, battery, temp,avc?"H.264":"JPEG"));
                         }
                         catch { }
                         framesCount = 0;

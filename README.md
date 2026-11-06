@@ -2,9 +2,11 @@
 
 **Your cameras. One Windows studio.**
 
-**2.11.0 preview:** native Android clients can negotiate H.264 hardware encoding with LensioStudio. CameraX feeds one GPU texture stream to the MediaCodec encoder and local preview. Windows uses its inbox Media Foundation H.264 decoder, with D3D11 acceleration when available and software decoding otherwise. JPEG remains the compatibility fallback; web/iPhone clients retain their existing WebRTC path. No new permissions or external codec installer are required.
+**2.11.1:** native Android clients can negotiate H.264 hardware encoding with LensioStudio. CameraX feeds one GPU texture stream to the MediaCodec encoder and local preview. Windows uses its inbox Media Foundation H.264 decoder, with D3D11 acceleration when available and software decoding otherwise. JPEG remains the compatibility fallback; web/iPhone clients retain their existing WebRTC path. No new permissions or external codec installer are required.
 
-This preview was validated using generated 720p/1080p H.264 streams, TCP reconnect/fallback tests, Android unit tests, and a 20-second 1080p composition run with three image overlays (29–30 actual composed camera FPS on the development PC). Physical Android hardware encoding, screen-off operation and image quality comparisons have **not yet been validated on phones**. The stable automatic updater continues to offer 2.10.7 until device validation is complete. Install both preview applications manually for testing.
+Validated using generated 720p/1080p H.264 streams, TCP reconnect/fallback tests, Android unit tests, and synthetic 1080p compositions with image overlays. Physical Android hardware encoding, screen-off operation and image quality comparisons have **not yet been validated on phones**. Update both applications through their GitHub update checks to enable the new protocol. Older Android clients continue using JPEG.
+
+The Android update card keeps its version, download size and installation action visible without displaying lengthy release notes. Desktop preview scaling retains a reusable surface without holding up scene publication; resetting filters saves the neutral settings immediately.
 
 The target remains 30 FPS. Camera auto-exposure, driver and encoder capabilities can still reduce actual capture FPS, especially in low light. H.264 targets 12 Mbps at 720p and 24 Mbps at 1080p; quality equivalence to the former JPEG path needs visual verification. The status bar shows JPEG, H.264 GPU or H.264 CPU for the active native camera. Scene rendering now uses paced high-resolution Windows timers instead of a recurring 33 ms timer.
 

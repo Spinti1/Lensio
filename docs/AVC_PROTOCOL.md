@@ -1,4 +1,4 @@
-# Native Android AVC protocol (preview)
+# Native Android AVC protocol
 
 The connection remains phone-initiated TCP on the existing receiver port. Existing APCI identity and APCM JPEG framing remain supported. New identities advertise `videoProtocol: 1` and `codecs: ["h264","jpeg"]`. Only the PC may offer `{ "videoCodec":"h264", "videoProtocol":1 }`, after verifying that its embedded decoder can load. Without this negotiation, the phone sends JPEG.
 
@@ -26,4 +26,4 @@ The phone's network worker owns a bounded four-packet queue and never writes on 
 
 The native decoder is built from `LensioStudio/native-codec`, uses Windows inbox Media Foundation and D3D11, and is embedded in LensioStudio.exe. It is extracted to a per-user content-addressed directory, checked against its embedded SHA-256 before loading, and loaded by absolute path with the dependency search restricted to that directory and System32. It does not register COM filters or request elevation. Software AVC decoding and then JPEG provide fallbacks when hardware or Media Foundation is unavailable. This protocol retains the existing trusted-LAN transport model; it does not add encryption or authentication to native LAN streaming.
 
-Validation without a phone covers Windows real AVC decoding, rotation, color samples, TCP negotiation/reconnect, malformed inputs, fallback, frame pacing, overlays, persistence and unit-tested Android socket lifecycle. Phone hardware encoder behavior, screen-off capture, thermal behavior and JPEG/AVC image-quality parity require real-device validation before promoting this preview to stable.
+Validation without a phone covers Windows real AVC decoding, rotation, color samples, TCP negotiation/reconnect, malformed inputs, fallback, frame pacing, overlays, persistence and unit-tested Android socket lifecycle. Phone hardware encoder behavior, screen-off capture, thermal behavior and JPEG/AVC image-quality parity still require real-device validation. Neither the negotiated codec nor a 30 FPS target guarantees that a phone camera delivers 30 unique frames per second.

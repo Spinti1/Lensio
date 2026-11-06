@@ -28,3 +28,9 @@ Windows webcams use a local DirectShow capture graph, RGB frame conversion and a
 The same 60-second synthetic pipeline check maintained 30 Camera FPS after these changes. One run averaged 9.93 ms work per frame; a repeat while the Android build was running averaged 12.54 ms, with 4.3 MB private-memory growth and no GDI-object growth. Results vary with system load. The image sources, output resolution, interpolation and camera target FPS were unchanged.
 
 `tests/SourceEditingSmoke.cs` checks magnetic alignment, cropped/rotated pixels and hit testing at 720p/1080p, shortcut repeat suppression, saved transforms, surface reuse and nonblocking preview. `tests/LocalCameraSmoke.cs` and `tests/LocalCameraStudioSmoke.cs` are optional hardware checks: capture/reopen, scene ingestion, duplicate prevention, saved reconnect and release on source removal. They require an available webcam and normal Windows camera permissions. Hardware checks do not assert that every camera actually delivers its negotiated 30 FPS.
+
+## Preview synchronization in 2.11.1
+
+Preview scaling now retains its input surface and releases the publication lock before processing pixels. The compositor can publish newer frames while a slow preview is still reading an older one. A retained surface cannot be overwritten or disposed; it returns to the bounded reusable surface pool after the reader releases it. Full-resolution output and interpolation remain unchanged.
+
+`tests/ScenePipelineSmoke.cs` checks neutral filters after startup and resizing, holds a preview reader while scene publication continues, and exercises a 1080p scene with eight large image overlays for 15 seconds. The development PC measured 30 Scene FPS and 29–30 Camera FPS with a synthetic 30 FPS camera after warmup. Running this benchmark alongside an Android build produced lower rates; it is a local performance check, not a phone or system-load guarantee.

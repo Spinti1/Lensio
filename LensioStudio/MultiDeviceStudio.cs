@@ -354,7 +354,7 @@ namespace ApexCam
                 int count=scene.LayerCount;
                 if(count==0 && !hasSceneComposition)return;
                 hasSceneComposition=count>0;
-                image=compositionSpare;compositionSpare=null;
+                lock(frameLock){image=compositionSpare;compositionSpare=null;}
                 if(image!=null&&(image.Width!=currentResWidth||image.Height!=currentResHeight)){image.Dispose();image=null;}
                 if(image==null)image=new Bitmap(currentResWidth,currentResHeight,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 using(var g=Graphics.FromImage(image)) {g.Clear(Color.Black);scene.RenderScene(g,image.Width,image.Height);}
@@ -369,7 +369,7 @@ namespace ApexCam
                         if(revision>=0 && revision!=measuredMainRevision){measuredMainRevision=revision;cameraFrameRate.Tick();}
                     }
                 }
-                lock(frameLock){compositionSpare=currentFrame;currentFrame=image;currentFrameRevision++;image=null;}
+                PublishSceneFrame(image);image=null;
                 RequestPreviewRefresh();
             } catch(Exception) { /* Connection teardown must not terminate the compositor. */ }
             finally {if(image!=null)image.Dispose();Interlocked.Exchange(ref composing,0);}

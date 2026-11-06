@@ -34,11 +34,7 @@ class CameraXManager(
     private var hardwareFailed=false
     private val variableFpsCameras=mutableSetOf<String>()
     @Volatile private var hardwareFixedRange=false
-    @Volatile private var captureGeneration=0
-    @Volatile private var exposureOverridden=false
-    @Volatile private var lastExposureReviewAt=0L
     @Volatile private var effectiveExposureIndex=0
-    private val videoExposure=VideoExposureBalance()
     private var gpuPreview: org.webrtc.SurfaceViewRenderer? = null
     var onAvcFrame: ((ByteArray,Int,Int,Int,Boolean,Long)->Unit)? = null
     var onHardwareFallback: ((String)->Unit)? = null
@@ -277,13 +273,11 @@ class CameraXManager(
             val ranges = Camera2CameraInfo.from(info)
                 .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                 ?: return null
-            // Hardware capture targets real 30 FPS, rather than asking AE to vary down to 15.
-            // Keep AE/AWB enabled; older JPEG clients retain their exposure-friendly fallback.
+            // Preserve the camera's normal AE behavior for both codecs. A fixed 30-30
+            // range shortens the maximum shutter time and can make indoor video dark.
             val rejected=Camera2CameraInfo.from(info).cameraId in variableFpsCameras
-            (if(hardwareRequested && !rejected)ranges.firstOrNull { it.lower==settings.fps && it.upper==settings.fps } else null)
-                ?: ranges.filter { it.upper == settings.fps && it.lower < it.upper }.maxByOrNull { it.lower }
-                ?: ranges.firstOrNull { !rejected && it.lower == settings.fps && it.upper == settings.fps }
-                ?: ranges.filter { it.upper <= settings.fps && (!rejected || it.lower<it.upper) }.maxByOrNull { it.upper }
+            VideoFpsPolicy.select(ranges.map { it.lower to it.upper },settings.fps,!rejected)
+                ?.let { Range(it.first,it.second) }
         } catch (e: Exception) {
             Log.w(tag, "Cannot read selected camera FPS capabilities; use driver defaults", e)
             null
@@ -291,8 +285,6 @@ class CameraXManager(
     }
 
     fun bindCamera(previewView: PreviewView? = currentPreviewView) {
-        val generation=++captureGeneration
-        videoExposure.reset();lastExposureReviewAt=android.os.SystemClock.elapsedRealtime()
         if (previewView != null) {
             currentPreviewView = previewView
         }
@@ -406,16 +398,6 @@ class CameraXManager(
         if(hardwareRequested)targetFpsRange?.let { previewBuilder.setTargetFrameRate(it) }
         try {
             Camera2Interop.Extender(previewBuilder)
-                .setSessionCaptureCallback(object:android.hardware.camera2.CameraCaptureSession.CaptureCallback(){
-                    override fun onCaptureCompleted(session:android.hardware.camera2.CameraCaptureSession,request:CaptureRequest,result:android.hardware.camera2.TotalCaptureResult){
-                        if(!hardwareRequested||!hardwareFixedRange||exposureOverridden||generation!=captureGeneration)return
-                        val now=android.os.SystemClock.elapsedRealtime()
-                        if(now-lastExposureReviewAt<1000)return
-                        lastExposureReviewAt=now
-                        val time=result.get(android.hardware.camera2.CaptureResult.SENSOR_EXPOSURE_TIME) ?: return
-                        android.os.Handler(android.os.Looper.getMainLooper()).post { reviewVideoExposure(generation,time) }
-                    }
-                })
                 .apply { targetFpsRange?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) } }
                 .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                 .apply { focusMode?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, it) } }
@@ -574,14 +556,6 @@ class CameraXManager(
         effectiveExposureIndex=settings.exposureIndex
         control.setExposureCompensationIndex(effectiveExposureIndex)
     }
-    private fun reviewVideoExposure(generation:Int,time:Long){
-        if(released||generation!=captureGeneration||exposureOverridden||!hardwareRequested||!hardwareFixedRange)return
-        val cam=camera ?: return
-        val state=cam.cameraInfo.exposureState
-        if(!state.isExposureCompensationSupported)return
-        val next=videoExposure.update(time,state.exposureCompensationStep.toDouble(),state.exposureCompensationRange.upper)
-        if(next!=effectiveExposureIndex){effectiveExposureIndex=next;cam.cameraControl.setExposureCompensationIndex(next)}
-    }
 
     fun setCameraLens(lens: CameraLensType, previewView: PreviewView? = currentPreviewView) {
         if (camera != null && customCameraId == null && settings.lensType == lens) return
@@ -689,7 +663,6 @@ class CameraXManager(
     }
 
     fun setExposure(index: Int) {
-        exposureOverridden=true;videoExposure.reset()
         settings = settings.copy(exposureIndex = index)
         effectiveExposureIndex=index
         camera?.cameraControl?.setExposureCompensationIndex(index)

@@ -11,6 +11,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class HardwareAvcCapture(
     sharedContext: EglBase.Context,
     private val request: SurfaceRequest,
+    sensorOrientation: Int,
+    frontFacing: Boolean,
+    initialRotation: Int,
     private val preview: () -> VideoSink?,
     private val onFrame: () -> Unit,
     private val onEncoded: (ByteArray, Int, Int, Int, Boolean, Long) -> Unit,
@@ -22,13 +25,15 @@ internal class HardwareAvcCapture(
         ?: throw IllegalStateException("Camera texture unavailable")
     private val surface = Surface(helper.surfaceTexture)
     private var encoder: VideoEncoder? = null
-    @Volatile private var rotation = 0
+    @Volatile private var rotation = initialRotation
+    private val textureCorrection=android.graphics.Matrix().apply {
+        setValues(CameraTextureOrientation.correction(sensorOrientation,frontFacing))
+    }
     private val keyframe = AtomicBoolean(true)
     private var failures=0
     private var lastKeyframeAt=0L
     init {
         helper.setTextureSize(size.width,size.height)
-        request.setTransformationInfoListener({ it.run() }) { rotation=it.rotationDegrees }
         helper.handler.post {
             try {
                 val factory=HardwareVideoEncoderFactory(sharedContext,false,false) { info ->
@@ -53,7 +58,10 @@ internal class HardwareAvcCapture(
                 helper.startListening { frame ->
                     if(!closed.get()) {
                         onFrame()
-                        val view=VideoFrame(frame.buffer,rotation,frame.timestampNs)
+                        val source=frame.buffer as VideoFrame.TextureBuffer
+                        val corrected=source.applyTransformMatrix(textureCorrection,source.width,source.height)
+                        val view=VideoFrame(corrected,rotation,frame.timestampNs)
+                        try {
                         preview()?.onFrame(view)
                         val now=android.os.SystemClock.elapsedRealtime()
                         val sync=keyframe.get() && (lastKeyframeAt==0L || now-lastKeyframeAt>=500)
@@ -62,6 +70,7 @@ internal class HardwareAvcCapture(
                         val status=active.encode(view,VideoEncoder.EncodeInfo(arrayOf(type)))
                         if(status==VideoCodecStatus.OK||status==VideoCodecStatus.NO_OUTPUT)failures=0
                         else if(++failures>=3)fail("Hardware AVC encode: $status")
+                        } finally {view.release()}
                     }
                 }
                 if(closed.get())return@post
@@ -70,6 +79,7 @@ internal class HardwareAvcCapture(
         }
     }
     fun requestKeyframe(){keyframe.set(true)}
+    fun setRotation(degrees:Int){if(degrees in listOf(0,90,180,270))rotation=degrees}
     private fun fail(message:String){if(!closed.get())Handler(Looper.getMainLooper()).post{if(!closed.get())onFailure(message)}}
     fun close(){
         if(!closed.compareAndSet(false,true))return

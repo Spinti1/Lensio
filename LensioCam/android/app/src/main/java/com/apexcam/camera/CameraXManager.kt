@@ -68,7 +68,8 @@ class CameraXManager(
             if(rotation==targetRotation)return
             targetRotation=rotation
             imageAnalysis?.targetRotation=rotation
-            preview?.targetRotation=rotation
+            if(hardwareRequested)camera?.cameraInfo?.let { hardwareCapture?.setRotation(it.getSensorRotationDegrees(rotation)) }
+            else preview?.targetRotation=rotation
         }
     }
     private val tag = "CameraXManager"
@@ -396,7 +397,11 @@ class CameraXManager(
                 preview!!.setSurfaceProvider { request ->
                     try {
                         hardwareCapture?.close()
-                        hardwareCapture=HardwareAvcCapture(sharedEglContext!!,request,{gpuPreview},
+                        val c2Info=selectedInfo?.let { Camera2CameraInfo.from(it) }
+                        val sensor=c2Info?.getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+                        val front=c2Info?.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_FRONT
+                        hardwareCapture=HardwareAvcCapture(sharedEglContext!!,request,sensor,front,
+                            selectedInfo?.getSensorRotationDegrees(targetRotation) ?: 0,{gpuPreview},
                             {lastCaptureAt=android.os.SystemClock.elapsedRealtime();if(previousCameraSelection!=null&&++selectionFrames>=30)previousCameraSelection=null},
                             {bytes,w,h,rotation,key,time->onAvcFrame?.invoke(bytes,w,h,rotation,key,time)},
                             {reason->disableHardwareVideo(reason)})

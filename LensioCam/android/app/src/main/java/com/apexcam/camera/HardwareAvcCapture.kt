@@ -14,6 +14,7 @@ internal class HardwareAvcCapture(
     sensorOrientation: Int,
     frontFacing: Boolean,
     initialRotation: Int,
+    predecessor: HardwareAvcCapture?,
     private val preview: () -> VideoSink?,
     private val onFrame: () -> Unit,
     private val onEncoded: (ByteArray, Int, Int, Int, Boolean, Long) -> Unit,
@@ -22,6 +23,7 @@ internal class HardwareAvcCapture(
     private val size=request.resolution.also { require(it.width%2==0 && it.height%2==0 && it.width.toLong()*it.height<=1920*1080) }
     private val closed = AtomicBoolean(false)
     private val resourcesReleased = AtomicBoolean(false)
+    private val encoderReleased=java.util.concurrent.CountDownLatch(1)
     private val helper = SurfaceTextureHelper.create("Lensio-AVC-texture", sharedContext)
         ?: throw IllegalStateException("Camera texture unavailable")
     private val surface = Surface(helper.surfaceTexture)
@@ -34,11 +36,15 @@ internal class HardwareAvcCapture(
     private var failures=0
     private var lastKeyframeAt=0L
     @Volatile private var lastOutputAt=android.os.SystemClock.elapsedRealtime()
-    val outputStalled: Boolean get()=android.os.SystemClock.elapsedRealtime()-lastOutputAt>=6000
+    @Volatile private var hasOutput=false
+    @Volatile private var inputFrames=0
+    val diagnostics: String get()="inputs=$inputFrames output=$hasOutput idleMs=${android.os.SystemClock.elapsedRealtime()-lastOutputAt}"
+    val outputStalled: Boolean get()=android.os.SystemClock.elapsedRealtime()-lastOutputAt>=if(hasOutput)6000 else 10000
     init {
         helper.setTextureSize(size.width,size.height)
         helper.handler.post {
             try {
+                check(predecessor?.encoderReleased?.await(5,java.util.concurrent.TimeUnit.SECONDS)!=false){"Previous hardware encoder did not release"}
                 val factory=HardwareVideoEncoderFactory(sharedContext,false,false) { info ->
                     if(android.os.Build.VERSION.SDK_INT>=29)info.isHardwareAccelerated
                     else !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android.")
@@ -53,6 +59,7 @@ internal class HardwareAvcCapture(
                 val result=active.initEncode(settings) { image,_ ->
                     if(!closed.get()) {
                         lastOutputAt=android.os.SystemClock.elapsedRealtime()
+                        hasOutput=true
                         val bytes=ByteArray(image.buffer.remaining());image.buffer.duplicate().get(bytes)
                         onEncoded(bytes,image.encodedWidth,image.encodedHeight,image.rotation,
                             image.frameType==EncodedImage.FrameType.VideoFrameKey,image.captureTimeNs/100)
@@ -63,6 +70,7 @@ internal class HardwareAvcCapture(
                     if(!closed.get()) {
                         try {
                         onFrame()
+                        inputFrames++
                         val source=frame.buffer as VideoFrame.TextureBuffer
                         val corrected=source.applyTransformMatrix(textureCorrection,source.width,source.height)
                         val view=VideoFrame(corrected,rotation,frame.timestampNs)
@@ -89,6 +97,7 @@ internal class HardwareAvcCapture(
     private fun fail(message:String){if(!closed.get())Handler(Looper.getMainLooper()).post{if(!closed.get())onFailure(message)}}
     fun close(){
         if(!closed.compareAndSet(false,true))return
+        helper.handler.post { releaseEncoder() }
         // Keep draining the camera texture until CameraX confirms that the HAL released it.
         // Releasing a provided Surface during unbind can wedge the next camera session.
         if(request.willNotProvideSurface())releaseResources()
@@ -97,8 +106,9 @@ internal class HardwareAvcCapture(
         if(!resourcesReleased.compareAndSet(false,true))return
         helper.handler.post {
             helper.stopListening()
-            runCatching{encoder?.release()};encoder=null
+            releaseEncoder()
             surface.release();helper.dispose()
         }
     }
+    private fun releaseEncoder(){try{runCatching{encoder?.release()}}finally{encoder=null;encoderReleased.countDown()}}
 }

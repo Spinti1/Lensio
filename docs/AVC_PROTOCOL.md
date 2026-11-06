@@ -40,4 +40,8 @@ Stopping capture marks the encoder closed but keeps consuming camera textures un
 
 For fixed-rate hardware capture, automatic exposure receives modest compensation only after two one-second sensor samples show a shutter time near the 30 FPS ceiling. Compensation is capped near +0.67 EV and the camera's supported range; two bright samples restore neutral exposure. Explicit exposure commands override this behavior. Capture-result metadata is sampled at most once per second, and a control request is made only when compensation changes. Resolution and requested FPS stay unchanged; sensor gain and noise can increase in dim light. Unit tests cover the neutral case, hysteresis, camera limits and reset.
 
+## Encoder handoff in 2.11.5
+
+Closing a session releases its MediaCodec encoder immediately on its texture thread while keeping the camera surface alive until CameraX returns it. A replacement encoder waits for the preceding encoder's release, off the main thread and bounded to five seconds. The initial output allowance is ten seconds; an established encoder still recovers after six seconds without output. The existing socket watchdog remains active. The camera catalog exposes texture-input count, whether encoded output started, and output idle time for diagnosis without ADB.
+
 Validation without a phone covers Windows real AVC decoding, rotation, color samples, TCP negotiation/reconnect, malformed inputs, fallback, frame pacing, overlays, persistence and unit-tested Android socket lifecycle. Phone hardware encoder behavior, screen-off capture, thermal behavior and JPEG/AVC image-quality parity still require real-device validation. Neither the negotiated codec nor a 30 FPS target guarantees that a phone camera delivers 30 unique frames per second.

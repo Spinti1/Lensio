@@ -29,6 +29,7 @@ class CameraXManager(
 ) {
     private var sharedEglContext: org.webrtc.EglBase.Context? = null
     private var hardwareCapture: HardwareAvcCapture? = null
+    private var retiringHardwareCapture: HardwareAvcCapture? = null
     @Volatile private var hardwareRequested=false
     private var hardwareFailed=false
     private val variableFpsCameras=mutableSetOf<String>()
@@ -113,6 +114,7 @@ class CameraXManager(
         "targetFpsRange" to activeFpsRange,
         "videoCodec" to if(hardwareRequested) "h264" else "jpeg",
         "exposureIndex" to effectiveExposureIndex,
+        "encoder" to hardwareCapture?.diagnostics,
         "error" to cameraSelectionError,
         "cameras" to CameraCatalog(context).read(findMainCameraId(), cameraIds)))
 
@@ -174,7 +176,7 @@ class CameraXManager(
             return
         }
         // Give codec startup and its output watchdog time to run before rebuilding the camera.
-        if(hardwareRequested && hardwareCapture!=null && now-lastCaptureAt<6500)return
+        if(hardwareRequested && hardwareCapture!=null)return
         if (!streaming || camera == null || lastCaptureAt == 0L || now-lastCaptureAt < 3500) return
         val previous = previousCameraSelection
         if(previous != null) {
@@ -300,7 +302,7 @@ class CameraXManager(
         lastCaptureAt = android.os.SystemClock.elapsedRealtime()
         imageAnalysis?.clearAnalyzer()
         provider.unbindAll()
-        hardwareCapture?.close();hardwareCapture=null
+        hardwareCapture?.let { retiringHardwareCapture=it;it.close() };hardwareCapture=null
         if(!hardwareRequested)removeGpuPreview()
 
         val cameraSelector = if (customCameraId != null) {
@@ -429,15 +431,17 @@ class CameraXManager(
                 attachGpuPreview()
                 preview!!.setSurfaceProvider { request ->
                     try {
-                        hardwareCapture?.close()
+                        val previous=hardwareCapture ?: retiringHardwareCapture
+                        previous?.close()
                         val c2Info=selectedInfo?.let { Camera2CameraInfo.from(it) }
                         val sensor=c2Info?.getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
                         val front=c2Info?.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_FRONT
                         hardwareCapture=HardwareAvcCapture(sharedEglContext!!,request,sensor,front,
-                            selectedInfo?.getSensorRotationDegrees(targetRotation) ?: 0,{gpuPreview},
+                            selectedInfo?.getSensorRotationDegrees(targetRotation) ?: 0,previous,{gpuPreview},
                             {lastCaptureAt=android.os.SystemClock.elapsedRealtime();if(previousCameraSelection!=null&&++selectionFrames>=30)previousCameraSelection=null},
                             {bytes,w,h,rotation,key,time->onAvcFrame?.invoke(bytes,w,h,rotation,key,time)},
                             {reason->disableHardwareVideo(reason)})
+                        retiringHardwareCapture=null
                     }catch(error:Exception){request.willNotProvideSurface();android.os.Handler(android.os.Looper.getMainLooper()).post{disableHardwareVideo(error.message?:"AVC surface failed")}}
                 }
                 camera=provider.bindToLifecycle(lifecycleOwner,cameraSelector,preview!!)

@@ -1,6 +1,7 @@
 name: Build and test
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -33,7 +34,9 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           $compiler="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           foreach($name in @('AvcDecodeSmoke','AvcReceiverSmoke')) {
-            & $compiler /nologo '/r:System.dll,System.Core.dll,System.Drawing.dll,System.Windows.Forms.dll' '/r:LensioStudio.exe' "/out:$name.exe" "$env:GITHUB_WORKSPACE/tests/$name.cs"
+            $source=Join-Path $env:GITHUB_WORKSPACE "tests\$name.cs"
+            $output=Join-Path $env:GITHUB_WORKSPACE "$name.exe"
+            & $compiler /nologo '/r:System.dll,System.Core.dll,System.Drawing.dll,System.Windows.Forms.dll' '/r:LensioStudio.exe' "/out:$output" $source
             if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
             & "./$name.exe" "$env:GITHUB_WORKSPACE/build/avc-test.bin"
             if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}

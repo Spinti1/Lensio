@@ -1,0 +1,82 @@
+package com.apexcam.camera
+
+import android.os.Handler
+import android.os.Looper
+import android.view.Surface
+import androidx.camera.core.SurfaceRequest
+import org.webrtc.*
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** One CameraX texture stream fans out on GPU to MediaCodec and the visible phone preview. */
+internal class HardwareAvcCapture(
+    sharedContext: EglBase.Context,
+    private val request: SurfaceRequest,
+    private val preview: () -> VideoSink?,
+    private val onFrame: () -> Unit,
+    private val onEncoded: (ByteArray, Int, Int, Int, Boolean, Long) -> Unit,
+    private val onFailure: (String) -> Unit
+) {
+    private val size=request.resolution.also { require(it.width%2==0 && it.height%2==0 && it.width.toLong()*it.height<=1920*1080) }
+    private val closed = AtomicBoolean(false)
+    private val helper = SurfaceTextureHelper.create("Lensio-AVC-texture", sharedContext)
+        ?: throw IllegalStateException("Camera texture unavailable")
+    private val surface = Surface(helper.surfaceTexture)
+    private var encoder: VideoEncoder? = null
+    @Volatile private var rotation = 0
+    private val keyframe = AtomicBoolean(true)
+    private var failures=0
+    private var lastKeyframeAt=0L
+    init {
+        helper.setTextureSize(size.width,size.height)
+        request.setTransformationInfoListener({ it.run() }) { rotation=it.rotationDegrees }
+        helper.handler.post {
+            try {
+                val factory=HardwareVideoEncoderFactory(sharedContext,false,false) { info ->
+                    if(android.os.Build.VERSION.SDK_INT>=29)info.isHardwareAccelerated
+                    else !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android.")
+                }
+                val codec=factory.supportedCodecs.firstOrNull { it.name.equals("H264",true) && it.params["packetization-mode"]=="1" }
+                    ?: throw IllegalStateException("No hardware H.264 encoder")
+                val active=factory.createEncoder(codec) ?: throw IllegalStateException("Hardware AVC unavailable")
+                encoder=active
+                android.util.Log.i("LensioAVC","Encoder: "+active.implementationName+" "+size.width+"x"+size.height)
+                val bitrate=if(size.width*size.height>1280*720)24000 else 12000
+                val settings=VideoEncoder.Settings(Runtime.getRuntime().availableProcessors(),size.width,size.height,bitrate,30,1,false,VideoEncoder.Capabilities(false))
+                val result=active.initEncode(settings) { image,_ ->
+                    if(!closed.get()) {
+                        val bytes=ByteArray(image.buffer.remaining());image.buffer.duplicate().get(bytes)
+                        onEncoded(bytes,image.encodedWidth,image.encodedHeight,image.rotation,
+                            image.frameType==EncodedImage.FrameType.VideoFrameKey,image.captureTimeNs/100)
+                    }
+                }
+                check(result==VideoCodecStatus.OK){"Hardware AVC init: $result"}
+                helper.startListening { frame ->
+                    if(!closed.get()) {
+                        onFrame()
+                        val view=VideoFrame(frame.buffer,rotation,frame.timestampNs)
+                        preview()?.onFrame(view)
+                        val now=android.os.SystemClock.elapsedRealtime()
+                        val sync=keyframe.get() && (lastKeyframeAt==0L || now-lastKeyframeAt>=500)
+                        if(sync){keyframe.set(false);lastKeyframeAt=now}
+                        val type=if(sync)EncodedImage.FrameType.VideoFrameKey else EncodedImage.FrameType.VideoFrameDelta
+                        val status=active.encode(view,VideoEncoder.EncodeInfo(arrayOf(type)))
+                        if(status==VideoCodecStatus.OK||status==VideoCodecStatus.NO_OUTPUT)failures=0
+                        else if(++failures>=3)fail("Hardware AVC encode: $status")
+                    }
+                }
+                if(closed.get())return@post
+                request.provideSurface(surface,{ it.run() }) { close() }
+            } catch(error:Exception){request.willNotProvideSurface();fail(error.message?:"Hardware AVC failed")}
+        }
+    }
+    fun requestKeyframe(){keyframe.set(true)}
+    private fun fail(message:String){if(!closed.get())Handler(Looper.getMainLooper()).post{if(!closed.get())onFailure(message)}}
+    fun close(){
+        if(!closed.compareAndSet(false,true))return
+        helper.handler.post {
+            helper.stopListening()
+            runCatching{encoder?.release()};encoder=null
+            surface.release();helper.dispose()
+        }
+    }
+}

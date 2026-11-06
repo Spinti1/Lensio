@@ -2,7 +2,8 @@ param(
  [Parameter(Mandatory=$true)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
  [Parameter(Mandatory=$true)][string]$DesktopPath,
  [Parameter(Mandatory=$true)][string]$AndroidPath,
- [Parameter(Mandatory=$true)][string]$NotesPath
+ [Parameter(Mandatory=$true)][string]$NotesPath,
+ [switch]$Prerelease
 )
 $ErrorActionPreference='Stop'
 $repository='Spinti1/Lensio'
@@ -16,7 +17,7 @@ $headers=@{Authorization='Bearer '+$token;'User-Agent'='Lensio-Release';Accept='
 $files=@{ 'LensioStudio.exe'=(Resolve-Path -LiteralPath $DesktopPath).Path; 'LensioCam.apk'=(Resolve-Path -LiteralPath $AndroidPath).Path }
 # Refuse publication unless the matching source tag is already pushed.
 $tag=Invoke-RestMethod "https://api.github.com/repos/$repository/git/ref/tags/v$Version" -Headers $headers
-$payload=@{tag_name="v$Version";name="Lensio $Version";body=(Get-Content -LiteralPath $NotesPath -Raw);draft=$true;prerelease=$false} | ConvertTo-Json
+$payload=@{tag_name="v$Version";name="Lensio $Version";body=(Get-Content -LiteralPath $NotesPath -Raw);draft=$true;prerelease=[bool]$Prerelease} | ConvertTo-Json
 $release=Invoke-RestMethod "https://api.github.com/repos/$repository/releases" -Method Post -Headers $headers -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($payload))
 $upload=$release.upload_url.Split('{')[0]
 $notices=Join-Path $PSScriptRoot '..\docs\THIRD_PARTY_NOTICES.txt'
@@ -37,8 +38,12 @@ $zip=[IO.Compression.ZipFile]::Open($nativeSource,[IO.Compression.ZipArchiveMode
 try {
  $nativeRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../LensioStudio/native')).Path
  foreach($file in Get-ChildItem -LiteralPath $nativeRoot -Recurse -File){$entry='LensioStudio/native/'+$file.FullName.Substring($nativeRoot.Length+1).Replace('\','/');[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,$entry)|Out-Null}
- foreach($name in @('Build-VirtualCamera.ps1','Bundled-Dependencies.json')){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot $name),('scripts/'+$name))|Out-Null}
+ foreach($name in @('Build-VirtualCamera.ps1','Build-VideoCodec.ps1','Bundled-Dependencies.json')){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot $name),('scripts/'+$name))|Out-Null}
  [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot '../assets/branding/no-signal.png'),'assets/branding/no-signal.png')|Out-Null
+ $codecRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../LensioStudio/native-codec')).Path
+ foreach($file in Get-ChildItem -LiteralPath $codecRoot -Recurse -File){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,('LensioStudio/native-codec/'+$file.FullName.Substring($codecRoot.Length+1).Replace('\','/')))|Out-Null}
+ [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $PSScriptRoot '../tests/GenerateAvcFixture.cpp'),'tests/GenerateAvcFixture.cpp')|Out-Null
+
 } finally {$zip.Dispose()}
 $extra=@{'Lensio-VirtualCamera-source.zip'=$nativeSource;'OBS-Studio-32.1.0-source.tar.gz'=$source;'OBS-GPL-2.0.txt'=(Join-Path $PSScriptRoot '../docs/OBS-GPL-2.0.txt');'ANDROID-PLATFORM-TOOLS-NOTICES.txt'=(Join-Path $PSScriptRoot '../docs/ANDROID-PLATFORM-TOOLS-NOTICES.txt')}
 foreach($name in $extra.Keys){$null=Invoke-RestMethod ($upload+'?name='+$name) -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $extra[$name]}
@@ -54,5 +59,5 @@ try {
  [IO.File]::WriteAllText($checksumFile,($checksums -join "`n")+"`n",[Text.UTF8Encoding]::new($false))
  $null=Invoke-RestMethod ($upload+'?name=SHA256SUMS.txt') -Method Post -Headers $headers -ContentType 'text/plain' -InFile $checksumFile
 } finally {if(Test-Path -LiteralPath $checksumFile){Remove-Item -LiteralPath $checksumFile}}
-$published=Invoke-RestMethod "https://api.github.com/repos/$repository/releases/$($release.id)" -Method Patch -Headers $headers -ContentType 'application/json' -Body '{"draft":false,"make_latest":"true"}'
+$published=Invoke-RestMethod "https://api.github.com/repos/$repository/releases/$($release.id)" -Method Patch -Headers $headers -ContentType 'application/json' -Body (@{draft=$false;make_latest=$(if($Prerelease){"false"}else{"true"})}|ConvertTo-Json)
 Write-Output $published.html_url

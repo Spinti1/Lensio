@@ -27,6 +27,40 @@ class CameraXManager(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner
 ) {
+    private var sharedEglContext: org.webrtc.EglBase.Context? = null
+    private var hardwareCapture: HardwareAvcCapture? = null
+    private var hardwareRequested=false
+    private var hardwareFailed=false
+    private var gpuPreview: org.webrtc.SurfaceViewRenderer? = null
+    var onAvcFrame: ((ByteArray,Int,Int,Int,Boolean,Long)->Unit)? = null
+    var onHardwareFallback: ((String)->Unit)? = null
+    fun configureHardwareVideo(context:org.webrtc.EglBase.Context){sharedEglContext=context}
+    fun setHardwareVideo(enabled:Boolean):Boolean{
+        if(released)return false
+        if(enabled && sharedEglContext==null){onHardwareFallback?.invoke("Hardware codec runtime unavailable");return false}
+        if(enabled && hardwareFailed){onHardwareFallback?.invoke("Hardware AVC previously failed");return false}
+        if(hardwareRequested==enabled)return enabled
+        hardwareRequested=enabled
+        bindCamera()
+        return hardwareRequested
+    }
+    fun requestVideoKeyframe(){hardwareCapture?.requestKeyframe()}
+    private fun disableHardwareVideo(reason:String){
+        if(!hardwareRequested||released)return
+        Log.w(tag,"Hardware AVC fallback: $reason")
+        hardwareFailed=true;hardwareRequested=false;onHardwareFallback?.invoke(reason);bindCamera()
+    }
+    private fun attachGpuPreview(){
+        val host=currentPreviewView ?: return
+        val context=sharedEglContext ?: return
+        if(gpuPreview!=null)return
+        softwarePreview?.setImageDrawable(null);softwarePreview?.visibility=android.view.View.GONE
+        gpuPreview=org.webrtc.SurfaceViewRenderer(host.context).also {
+            it.init(context,null);it.setScalingType(org.webrtc.RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+            it.setMirror(settings.isFrontCamera);host.addView(it,android.widget.FrameLayout.LayoutParams(-1,-1))
+        }
+    }
+    private fun removeGpuPreview(){gpuPreview?.let{(it.parent as? android.view.ViewGroup)?.removeView(it);it.release()};gpuPreview=null;softwarePreview?.visibility=android.view.View.VISIBLE}
     private var targetRotation=android.view.Surface.ROTATION_0
     private val orientationListener=object:android.view.OrientationEventListener(context,android.hardware.SensorManager.SENSOR_DELAY_NORMAL){
         override fun onOrientationChanged(orientation:Int){
@@ -156,7 +190,8 @@ class CameraXManager(
             previewView.addView(softwarePreview, android.widget.FrameLayout.LayoutParams(-1,-1))
         }
         if (cameraProvider != null) {
-            if (!usesSharedPreview || camera == null) bindCamera()
+            if(hardwareRequested)attachGpuPreview()
+            else if (!usesSharedPreview || camera == null) bindCamera()
             onReady()
         }
         else startCapture(onReady)
@@ -186,11 +221,12 @@ class CameraXManager(
 
     fun detachPreview() {
         if (currentPreviewView == null) return
+        removeGpuPreview()
         softwarePreview?.setImageDrawable(null)
         softwarePreview = null
         currentPreviewView = null
         // A21s already uses one analysis stream; do not restart its HAL when the screen turns off.
-        if (!usesSharedPreview) bindCamera()
+        if (!usesSharedPreview && !hardwareRequested) bindCamera()
     }
 
     fun findMainCameraId(): String? {
@@ -237,6 +273,8 @@ class CameraXManager(
         lastCaptureAt = android.os.SystemClock.elapsedRealtime()
         imageAnalysis?.clearAnalyzer()
         provider.unbindAll()
+        hardwareCapture?.close();hardwareCapture=null
+        if(!hardwareRequested)removeGpuPreview()
 
         val cameraSelector = if (customCameraId != null) {
             val cid = customCameraId!!
@@ -344,6 +382,24 @@ class CameraXManager(
 
         preview = previewBuilder.build().also {
             if (pv != null) it.setSurfaceProvider(pv.surfaceProvider)
+        }
+
+        if(hardwareRequested && sharedEglContext!=null){
+            try {
+                attachGpuPreview()
+                preview!!.setSurfaceProvider { request ->
+                    try {
+                        hardwareCapture?.close()
+                        hardwareCapture=HardwareAvcCapture(sharedEglContext!!,request,{gpuPreview},
+                            {lastCaptureAt=android.os.SystemClock.elapsedRealtime();if(previousCameraSelection!=null&&++selectionFrames>=30)previousCameraSelection=null},
+                            {bytes,w,h,rotation,key,time->onAvcFrame?.invoke(bytes,w,h,rotation,key,time)},
+                            {reason->disableHardwareVideo(reason)})
+                    }catch(error:Exception){request.willNotProvideSurface();android.os.Handler(android.os.Looper.getMainLooper()).post{disableHardwareVideo(error.message?:"AVC surface failed")}}
+                }
+                camera=provider.bindToLifecycle(lifecycleOwner,cameraSelector,preview!!)
+                applySettings()
+                return
+            }catch(error:Exception){disableHardwareVideo(error.message?:"AVC camera binding failed");return}
         }
 
         val analysisBuilder = ImageAnalysis.Builder().setTargetRotation(targetRotation)
@@ -592,6 +648,7 @@ class CameraXManager(
 
     fun release() {
         released = true
+        hardwareCapture?.close();hardwareCapture=null;removeGpuPreview()
         orientationListener.disable()
         readyCallbacks.clear()
         softwarePreview?.setImageDrawable(null)
@@ -600,6 +657,7 @@ class CameraXManager(
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
         previewExecutor.shutdownNow()
+        onAvcFrame=null;onHardwareFallback=null
         onFrameAvailable = null
         onLensChanged = null
         currentPreviewView = null

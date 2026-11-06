@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Drawing;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -20,6 +21,7 @@ namespace ApexCam
         private class FramePacket
         {
             public long SessionId;
+            public bool Avc,Keyframe;public int Width,Height,Rotation;public long Timestamp;
             public byte[] JpegBytes;
             public int Battery;
             public bool IsCharging;
@@ -29,12 +31,16 @@ namespace ApexCam
         }
 
         private FramePacket latestPacket = null;
+        private readonly object packetGate=new object();
+        private readonly Queue<FramePacket> avcPackets=new Queue<FramePacket>();
+        private volatile bool avcRejected;private int queuedBytes;private bool waitingForKey=true;private DateTime lastKeyRequest=DateTime.MinValue;
         private readonly AutoResetEvent frameReadyEvent = new AutoResetEvent(false);
 
         public event Action<Bitmap, int, bool, float, int, int> OnFrameReceived;
         public event Action<bool> OnConnectionStateChanged;
 
         public string DeviceLabel { get; set; }
+        public volatile string ActiveCodec="JPEG";
         private int framesCount = 0;
         private DateTime lastFpsCalc = DateTime.UtcNow;
         public int CurrentFps { get; private set; }
@@ -65,32 +71,51 @@ namespace ApexCam
             new Thread(() => HandleClientSession(client,sessionId,firstMagic)) {IsBackground=true,Name="Lensio-device-read"}.Start();
         }
 
+        private void RequestKeyframe(){if((DateTime.UtcNow-lastKeyRequest).TotalMilliseconds<1000)return;lastKeyRequest=DateTime.UtcNow;SendControl("{\"videoKeyframe\":true}");}
         private void DecodeLoop()
         {
-            while (isRunning)
-            {
-                frameReadyEvent.WaitOne(40);
-                if (!isRunning) break;
-
-                FramePacket packet = Interlocked.Exchange(ref latestPacket, null);
-                if (packet == null || packet.SessionId != Interlocked.Read(ref currentSessionId)) continue;
-
-                try
-                {
-                    using (MemoryStream ms = new MemoryStream(packet.JpegBytes))
-                    using (Bitmap decodedBmp = new Bitmap(ms))
-                    {
-                        if (OnFrameReceived != null && packet.SessionId == Interlocked.Read(ref currentSessionId))
-                        {
-                            try { OnFrameReceived(decodedBmp, packet.Battery, packet.IsCharging, packet.Temp, packet.PhoneFps, packet.Rtt); } catch { }
+            AvcVideoDecoder decoder=null;int decoderWidth=0,decoderHeight=0;
+            try {while(isRunning){
+                frameReadyEvent.WaitOne(40);if(!isRunning)break;
+                while(isRunning){
+                    FramePacket packet;
+                    lock(packetGate){packet=latestPacket;latestPacket=null;if(packet==null&&avcPackets.Count>0){packet=avcPackets.Dequeue();queuedBytes-=packet.JpegBytes.Length;}}
+                    if(packet==null)break;if(packet.SessionId!=Interlocked.Read(ref currentSessionId))continue;
+                    try {
+                        if(packet.Avc){
+                            if(decoder==null||decoderWidth!=packet.Width||decoderHeight!=packet.Height){
+                                if(decoder!=null)decoder.Dispose();decoder=null;
+                                if(!packet.Keyframe){RequestKeyframe();continue;}
+                                decoder=new AvcVideoDecoder(packet.Width,packet.Height,true);decoderWidth=packet.Width;decoderHeight=packet.Height;
+                                ActiveCodec=decoder.IsHardware?"H.264 GPU":"H.264 CPU";
+                                LogConnection("H.264 decoder: "+(decoder.IsHardware?"D3D11 hardware":"Windows software")+" "+decoderWidth+"x"+decoderHeight);
+                            }
+                            decoder.Decode(packet.JpegBytes,packet.Timestamp,packet.Rotation,bmp=>DeliverFrame(packet,bmp));
+                        }else{
+                            if(decoder!=null){decoder.Dispose();decoder=null;}ActiveCodec="JPEG";
+                            using(var ms=new MemoryStream(packet.JpegBytes))using(var bmp=new Bitmap(ms))DeliverFrame(packet,bmp);
                         }
+                    }catch(Exception error){
+                        if(decoder!=null){decoder.Dispose();decoder=null;}
+                        if(packet.Avc){avcRejected=true;lock(packetGate){avcPackets.Clear();queuedBytes=0;waitingForKey=true;}LogConnection("H.264 fallback: "+error.Message);SendControl("{\"videoCodec\":\"jpeg\"}");}
                     }
                 }
-                catch
-                {
-                    // Ignore transient corrupt frame
+            }}finally{if(decoder!=null)decoder.Dispose();}
+        }
+        private void DeliverFrame(FramePacket packet,Bitmap image){if(isRunning&&packet.SessionId==Interlocked.Read(ref currentSessionId)&&OnFrameReceived!=null)try{OnFrameReceived(image,packet.Battery,packet.IsCharging,packet.Temp,packet.PhoneFps,packet.Rtt);}catch{}}
+        private void QueuePacket(FramePacket packet){
+            if(packet.Avc&&avcRejected)return;
+            bool key=false;
+            lock(packetGate){
+                if(!packet.Avc){latestPacket=packet;avcPackets.Clear();queuedBytes=0;waitingForKey=true;}
+                else {
+                    latestPacket=null;
+                    if(avcPackets.Count>=24 || queuedBytes+packet.JpegBytes.Length>4*1024*1024){avcPackets.Clear();queuedBytes=0;waitingForKey=true;key=true;}
+                    if(waitingForKey&&!packet.Keyframe)key=true;
+                    else{waitingForKey=false;avcPackets.Enqueue(packet);queuedBytes+=packet.JpegBytes.Length;}
                 }
             }
+            if(key)RequestKeyframe();frameReadyEvent.Set();
         }
 
         private void HandleClientSession(TcpClient client, long sessionId, byte[] firstMagic = null)
@@ -113,7 +138,8 @@ namespace ApexCam
                     if(firstMagic!=null) { Buffer.BlockCopy(firstMagic,0,magic,0,4); firstMagic=null; }
                     else if (!ReadExact(stream, magic, 4)) break;
 
-                    while (magic[0] != 0x41 || magic[1] != 0x50 || magic[2] != 0x43 || magic[3] != 0x4D)
+                    bool avc=magic[0]==76&&magic[1]==72&&magic[2]==50&&magic[3]==52;
+                    while (!avc && (magic[0] != 0x41 || magic[1] != 0x50 || magic[2] != 0x43 || magic[3] != 0x4D))
                     {
                         int b = stream.ReadByte();
                         if (b < 0) return;
@@ -126,6 +152,10 @@ namespace ApexCam
                     // Read remaining 28 bytes of header
                     byte[] restHeader = new byte[28];
                     if (!ReadExact(stream, restHeader, 28)) break;
+                    long timestamp=0;int rotation=0;bool keyframe=false;
+                    if(avc){var pts=new byte[8];if(!ReadExact(stream,pts,8))break;timestamp=BitConverter.ToInt64(pts,0);int flags=BitConverter.ToInt32(restHeader,24);rotation=(flags>>8)&0x1ff;keyframe=(flags&1)!=0;
+                        if((flags>>24)!=1 || (rotation!=0&&rotation!=90&&rotation!=180&&rotation!=270)||timestamp<0)break;
+                    }
 
                     int width = BitConverter.ToInt32(restHeader, 0);
                     int height = BitConverter.ToInt32(restHeader, 4);
@@ -137,6 +167,7 @@ namespace ApexCam
 
                     if (width<=0 || height<=0 || width>8192 || height>8192 || payloadLength <= 0 || payloadLength > 10 * 1024 * 1024) break;
 
+                    if(avc && (width%2!=0||height%2!=0||width>1920||height>1920||(long)width*height>1920*1080||payloadLength>4*1024*1024))break;
                     // 2. Read payload (JPEG frame) immediately off the socket
                     byte[] jpegBytes = new byte[payloadLength];
                     if (!ReadExact(stream, jpegBytes, payloadLength)) break;
@@ -159,23 +190,23 @@ namespace ApexCam
                         lastFpsCalc = now;
                     }
 
-                    bool isCharging = (battery & 0x10000) != 0 || (rtt == 1);
+                    bool isCharging = (battery & 0x10000) != 0 || (!avc && rtt == 1);
                     int cleanBattery = battery & 0xFFFF;
                     if (cleanBattery > 100) cleanBattery = 100;
                     if (cleanBattery < 0) cleanBattery = 0;
 
                     // Pass to decoupled worker thread - never stalls the TCP socket!
-                    latestPacket = new FramePacket
+                    QueuePacket(new FramePacket
                     {
+                        Avc=avc,Keyframe=keyframe,Width=width,Height=height,Rotation=rotation,Timestamp=timestamp,
                         SessionId = sessionId,
                         JpegBytes = jpegBytes,
                         Battery = cleanBattery,
                         IsCharging = isCharging,
                         Temp = temp,
                         PhoneFps = phoneFps,
-                        Rtt = (rtt == 1 || rtt == 0) ? 8 : rtt
-                    };
-                    frameReadyEvent.Set();
+                        Rtt = avc ? 0 : ((rtt == 1 || rtt == 0) ? 8 : rtt)
+                    });
                 }
             }
             catch (Exception ex)
@@ -243,6 +274,7 @@ namespace ApexCam
         public void Stop()
         {
             isRunning = false;
+            lock(packetGate){latestPacket=null;avcPackets.Clear();queuedBytes=0;}
             try { frameReadyEvent.Set(); } catch { }
             try
             {

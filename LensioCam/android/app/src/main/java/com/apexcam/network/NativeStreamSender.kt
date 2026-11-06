@@ -18,7 +18,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRealtime() }) {
     private data class Session(val socket: Socket, val host: String, val port: Int) {
         val output = socket.getOutputStream()
+        val outputLock=Any()
+        @Volatile var writeStartedAt=0L
     }
+    private val avcQueue=java.util.concurrent.ArrayBlockingQueue<AvcPacket>(4)
+    private data class AvcPacket(val owner:Session,val bytes:ByteArray,val width:Int,val height:Int,val rotation:Int,val key:Boolean,val timestamp:Long,val battery:Int,val charging:Boolean,val temp:Float)
+    private val avcExecutor=Executors.newSingleThreadExecutor { Thread(it,"Lensio-AVC-network") }
+    @Volatile private var avcEnabled=false
+    private val avcNeedsKey=AtomicBoolean(true)
+    var onVideoKeyframeRequested:(()->Unit)?=null
     private val stateLock = Any()
     private val streamExecutor = Executors.newSingleThreadExecutor { Thread(it, "Lensio-encoder") }
     private val receiveExecutor = Executors.newSingleThreadExecutor { Thread(it, "Lensio-commands") }
@@ -32,7 +40,6 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     @Volatile private var connecting = false
     private var rotatedYuv=ByteArray(0)
     private var yuvBytes = ByteArray(0)
-    @Volatile private var writeStartedAt = 0L
     @Volatile private var busySince = 0L
     @Volatile private var lastSentAt = 0L
     @Volatile private var busySession: Session? = null
@@ -51,6 +58,34 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     private var frameCount = 0
     private var fpsSince = clock()
 
+    init { avcExecutor.execute { while(!closed.get()) {
+        val packet=try{avcQueue.poll(250,java.util.concurrent.TimeUnit.MILLISECONDS)}catch(_:InterruptedException){break} ?: continue
+        val owner=packet.owner
+        if(session!==owner||!avcEnabled)continue
+        try {
+            val header=ByteBuffer.allocate(40).order(ByteOrder.LITTLE_ENDIAN)
+            header.put(byteArrayOf(76,72,50,52)).putInt(packet.width).putInt(packet.height).putInt(packet.bytes.size).putInt(currentFps)
+            header.putInt(packet.battery.coerceIn(0,100) or (if(packet.charging)0x10000 else 0)).putInt((packet.temp*10).toInt())
+            header.putInt(0x01000000 or (packet.rotation shl 8) or (if(packet.key)1 else 0)).putLong(packet.timestamp)
+            val written=synchronized(owner.outputLock){
+                if(session!==owner||!avcEnabled)false
+                else {owner.writeStartedAt=clock();try{owner.output.write(header.array());owner.output.write(packet.bytes);owner.output.flush();true}finally{owner.writeStartedAt=0}}
+            }
+            if(written)synchronized(stateLock){if(session===owner){totalFramesSent++;lastSentAt=clock();frameCount++;val elapsed=lastSentAt-fpsSince;if(elapsed>=1000){currentFps=(frameCount*1000L/elapsed).toInt();frameCount=0;fpsSince=lastSentAt}}}
+        }catch(error:Exception){Log.w("NativeStreamSender","AVC socket failed",error);disconnectSession(owner)}
+    } } }
+    fun setAvcEnabled(enabled:Boolean){avcEnabled=enabled;avcQueue.clear();avcNeedsKey.set(true);if(enabled)onVideoKeyframeRequested?.invoke()}
+    fun sendAvc(bytes:ByteArray,width:Int,height:Int,rotation:Int,key:Boolean,timestamp:Long,battery:Int,charging:Boolean,temp:Float){
+        val owner=session ?: return
+        if(!avcEnabled||closed.get()||bytes.isEmpty()||bytes.size>4*1024*1024)return
+        synchronized(avcQueue){
+            if(avcNeedsKey.get()&&!key)return
+            if(!avcQueue.offer(AvcPacket(owner,bytes,width,height,rotation,key,timestamp,battery,charging,temp))){
+                avcQueue.clear();avcNeedsKey.set(true);onVideoKeyframeRequested?.invoke()
+                if(key){avcQueue.offer(AvcPacket(owner,bytes,width,height,rotation,key,timestamp,battery,charging,temp));avcNeedsKey.set(false)}
+            }else if(key)avcNeedsKey.set(false)
+        }
+    }
     fun connect(host: String, port: Int = 8556, force: Boolean = false) {
         if (host.isBlank()) return
         synchronized(stateLock) {
@@ -134,7 +169,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     fun checkHealth() {
         val now = clock()
         val active = session ?: return
-        if ((busySession === active && writeStartedAt > 0 && now - writeStartedAt > 3000) ||
+        if ((active.writeStartedAt > 0 && now - active.writeStartedAt > 3000) ||
             now - lastSentAt > 12000) {
             Log.w("NativeStreamSender", "Stream watchdog: busyMs="+(now-busySince)+", noFrameMs="+(now-lastSentAt))
             // Only the encoder's finally releases busy, after the socket write has unwound.
@@ -145,7 +180,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     fun sendFrame(imageProxy: ImageProxy, batteryLevel: Int, tempC: Float, isCharging: Boolean = false) {
         val owner = session
         val previewVisible = onPreviewJpeg != null && (isPreviewVisible?.invoke() != false)
-        if (closed.get() || (owner == null && (httpStreamServer?.activeClientCount ?: 0) == 0 &&
+        if (avcEnabled || closed.get() || (owner == null && (httpStreamServer?.activeClientCount ?: 0) == 0 &&
                 !previewVisible) ||
             !busy.compareAndSet(false, true)) {
             imageProxy.close()
@@ -196,10 +231,11 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                         header.putInt(outputWidth).putInt(outputHeight).putInt(buffer.size()).putInt(currentFps)
                         header.putInt(batteryLevel.coerceIn(0, 100) or (if (isCharging) 0x10000 else 0))
                         header.putInt((tempC * 10).toInt()).putInt(if (isCharging) 1 else 0)
-                        writeStartedAt = clock()
-                        owner.output.write(header.array())
-                        buffer.writeTo(owner.output)
-                        owner.output.flush()
+                        synchronized(owner.outputLock){
+                            if(avcEnabled||session!==owner)return@execute
+                            owner.writeStartedAt=clock()
+                            try{owner.output.write(header.array());buffer.writeTo(owner.output);owner.output.flush()}finally{owner.writeStartedAt=0}
+                        }
                         synchronized(stateLock) {
                             if (session === owner) {
                                 totalFramesSent++
@@ -220,7 +256,6 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                     if (owner != null) disconnectSession(owner)
                 } finally {
                     if (!imageClosed) runCatching { imageProxy.close() }
-                    writeStartedAt = 0L
                     busySession = null
                     busy.set(false)
                 }
@@ -244,6 +279,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     private fun closeSocketsLocked() {
         val old = session
         session = null
+        avcEnabled=false;avcQueue.clear();avcNeedsKey.set(true)
         connecting = false
         currentFps = 0
         // Closing the socket aborts a blocking writer without waiting for its stream monitor.
@@ -263,6 +299,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
             httpStreamServer = null
             onPreviewJpeg = null
             isPreviewVisible = null
+            avcExecutor.shutdownNow();avcQueue.clear();onVideoKeyframeRequested=null
             connectExecutor.shutdownNow()
             receiveExecutor.shutdownNow()
             streamExecutor.shutdown()

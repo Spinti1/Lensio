@@ -22,7 +22,7 @@ namespace ApexCam
         private readonly Dictionary<string,PhoneSlot> phoneSlots=new Dictionary<string,PhoneSlot>();
         private string mainDeviceId, controlledDeviceId;
         private Panel phoneCards;
-        private System.Threading.Timer compositionTimer;
+        private FramePump compositionTimer;
         private int composing;
         private Bitmap compositionSpare;
         private sealed class ActualFrameRate {
@@ -43,7 +43,7 @@ namespace ApexCam
             sourceToolTips.SetToolTip(btnToggleMic,"Microphone audio is received from the Main phone.");
             ctrlContent.Controls.Add(phoneCards);
             InitializePhonePairingUi();
-            compositionTimer=new System.Threading.Timer(_ => ComposeDevices(),null,33,33);
+            compositionTimer=new FramePump(30,ComposeDevices);
             Disposed += (s,e) => StopDeviceComposition();
             Disposed += (s,e) => {lock(frameLock){if(previewScaler!=null)previewScaler.Dispose();previewSource=null;if(compositionSpare!=null){compositionSpare.Dispose();compositionSpare=null;}if(currentFrame!=null){currentFrame.Dispose();currentFrame=null;}}};
         }
@@ -51,8 +51,7 @@ namespace ApexCam
             compositionStopped=true;
             if(compositionTimer!=null) {
                 var timer=compositionTimer;compositionTimer=null;
-                var done=new ManualResetEvent(false);
-                if(timer.Dispose(done) && done.WaitOne(2000))done.Dispose();
+                timer.Dispose();
             }
         }
         private ObsLayer CreatePhoneLayer(PhoneDeviceInfo info,bool main,int index) {

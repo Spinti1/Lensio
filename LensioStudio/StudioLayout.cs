@@ -401,6 +401,7 @@ namespace ApexCam
                 ? string.Format("Camera {0} FPS | Scene {1} FPS | {2}x{3} | Battery {4}%",
                     cameraFrameRate.Value,sceneFrameRate.Value,currentResWidth,currentResHeight,batteryPercent)
                 : "Waiting for LensioCam | Wi-Fi / USB";
+            if(isConnected&&receiver!=null)streamStatus.Text+=" | "+receiver.DeviceCodec(mainDeviceId);
         }
     }
 }

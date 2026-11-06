@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -29,6 +29,7 @@ namespace ApexCam
         private readonly int port;
         public int BoundPort {get; private set;}
         public string ActiveDeviceId { get {lock(gate)return activeId;} set {lock(gate)activeId=value;} }
+        public string DeviceCodec(string id){lock(gate){Entry e;return id!=null&&devices.TryGetValue(id,out e)?e.Core.ActiveCodec:"JPEG";}}
         public int CurrentFps {get {lock(gate){Entry e; return activeId!=null && devices.TryGetValue(activeId,out e)?e.Core.CurrentFps:0;}}}
         public bool IsConnected {get {lock(gate)return devices.Count>0;}}
         public event Action<PhoneDeviceInfo> OnDeviceConnected;
@@ -78,7 +79,7 @@ namespace ApexCam
                 string host=endpoint.Address.ToString();
                 var stream=client.GetStream(); var magic=ReadExact(stream,4);
                 string id="legacy:"+host, name="Phone "+host;
-                byte[] first=magic;
+                byte[] first=magic;bool offersAvc=false;
                 if(magic[0]==65 && magic[1]==80 && magic[2]==67 && magic[3]==73) {
                     int length=BitConverter.ToInt32(ReadExact(stream,4),0);
                     if(length<1 || length>4096)throw new InvalidDataException();
@@ -87,6 +88,11 @@ namespace ApexCam
                     if(!json.TryGetValue("id",out value) || !(value is string) || ((string)value).Length<1 || ((string)value).Length>128)throw new InvalidDataException();
                     id=(string)value;
                     if(json.TryGetValue("name",out value) && value is string)name=((string)value).Substring(0,Math.Min(80,((string)value).Length));
+                    object protocol,codecs;
+                    if(json.TryGetValue("videoProtocol",out protocol)&&Convert.ToInt32(protocol)==1&&json.TryGetValue("codecs",out codecs)){
+                        var list=codecs as System.Collections.IEnumerable;
+                        if(list!=null&&!(codecs is string))foreach(var codec in list)if(Convert.ToString(codec)=="h264")offersAvc=true;
+                    }
                     first=null;
                 } else if(magic[0]!=65 || magic[1]!=80 || magic[2]!=67 || magic[3]!=77)throw new InvalidDataException();
                 entry=new Entry {Info=new PhoneDeviceInfo{Id=id,Name=name,Host=host},Core=new VideoReceiverCore {DeviceLabel=id},Ticket=ticket};
@@ -124,6 +130,7 @@ namespace ApexCam
                     }
                 };
                 owner.Core.Adopt(client,first);
+                if(offersAvc&&AvcVideoDecoder.Available)owner.Core.SendControl("{\"videoCodec\":\"h264\",\"videoProtocol\":1}");
                 var added=OnDeviceConnected;if(added!=null)added(owner.Info);
                 var connectedEvent=OnDeviceConnectionStateChanged;if(connectedEvent!=null)connectedEvent(id,true);
                 var legacy=OnClientConnected;if(legacy!=null)legacy(host,endpoint.Port);

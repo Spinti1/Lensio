@@ -198,8 +198,14 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         instance = this
         captureLifecycle.currentState = Lifecycle.State.CREATED
         createNotificationChannel()
+        val codecReady=runCatching {org.webrtc.PeerConnectionFactory.initialize(
+            org.webrtc.PeerConnectionFactory.InitializationOptions.builder(this).setEnableInternalTracer(false).createInitializationOptions())}.isSuccess
         rootEglBase = EglBase.create()
         cameraManager = CameraXManager(this, this)
+        if(codecReady)cameraManager.configureHardwareVideo(rootEglBase.eglBaseContext)
+        cameraManager.onAvcFrame={bytes,w,h,rotation,key,time->nativeSender.sendAvc(bytes,w,h,rotation,key,time,cachedBatteryLevel,cachedIsCharging,cachedDeviceTemp)}
+        cameraManager.onHardwareFallback={nativeSender.setAvcEnabled(false)}
+        nativeSender.onVideoKeyframeRequested={cameraManager.requestVideoKeyframe()}
         signalingClient = SignalingClient(this)
         webRtcClient = WebRtcClient(this, rootEglBase, signalingClient)
         nsdDiscovery = NsdDiscovery(this)
@@ -218,7 +224,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
             devicePrefs.edit().putString("id",it).apply()
         }
         nativeSender.deviceIdentityJson = com.google.gson.Gson().toJson(mapOf(
-            "id" to deviceId, "name" to android.os.Build.MODEL, "version" to com.apexcam.BuildConfig.VERSION_NAME))
+            "id" to deviceId, "name" to android.os.Build.MODEL, "version" to com.apexcam.BuildConfig.VERSION_NAME,"videoProtocol" to 1,"codecs" to listOf("h264","jpeg")))
         nativeSender.httpStreamServer = httpStreamServer
         httpStreamServer.onReconnectRequested = {
             Log.d(tag, "Cerere de reconectare primita prin HTTP")
@@ -239,7 +245,11 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         nativeSender.onCommandReceived = { cmd ->
             try {
                 val json = com.google.gson.JsonParser.parseString(cmd).asJsonObject
-                onCameraControlReceived(json)
+                if(json.has("videoCodec")){
+                    val avc=json.get("videoCodec").asString=="h264" && json.get("videoProtocol")?.asInt==1
+                    runOnUiThread { val enabled=cameraManager.setHardwareVideo(avc);nativeSender.setAvcEnabled(enabled);cameraManager.requestVideoKeyframe() }
+                }else if(json.has("videoKeyframe")){cameraManager.requestVideoKeyframe()}
+                else onCameraControlReceived(json)
             } catch (e: Exception) {}
         }
 
@@ -249,6 +259,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
                     lastStreamConnectedAt = android.os.SystemClock.elapsedRealtime()
                     cameraManager.checkCaptureHealth(true)
                 }
+                if(!connected){nativeSender.setAvcEnabled(false);cameraManager.setHardwareVideo(false)}
                 isStreamConnected.value = connected || httpStreamServer.activeClientCount > 0
             }
         }

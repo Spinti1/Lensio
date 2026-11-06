@@ -2,6 +2,13 @@
 
 **Your cameras. One Windows studio.**
 
+**2.11.0 preview:** native Android clients can negotiate H.264 hardware encoding with LensioStudio. CameraX feeds one GPU texture stream to the MediaCodec encoder and local preview. Windows uses its inbox Media Foundation H.264 decoder, with D3D11 acceleration when available and software decoding otherwise. JPEG remains the compatibility fallback; web/iPhone clients retain their existing WebRTC path. No new permissions or external codec installer are required.
+
+This preview was validated using generated 720p/1080p H.264 streams, TCP reconnect/fallback tests, Android unit tests, and a 20-second 1080p composition run with three image overlays (29–30 actual composed camera FPS on the development PC). Physical Android hardware encoding, screen-off operation and image quality comparisons have **not yet been validated on phones**. The stable automatic updater continues to offer 2.10.7 until device validation is complete. Install both preview applications manually for testing.
+
+The target remains 30 FPS. Camera auto-exposure, driver and encoder capabilities can still reduce actual capture FPS, especially in low light. H.264 targets 12 Mbps at 720p and 24 Mbps at 1080p; quality equivalence to the former JPEG path needs visual verification. The status bar shows JPEG, H.264 GPU or H.264 CPU for the active native camera. Scene rendering now uses paced high-resolution Windows timers instead of a recurring 33 ms timer.
+
+
 LensioCam turns Android phones into wireless webcams. LensioStudio brings phones and PC webcams together in a compact Windows studio with movable sources, image overlays, live filters and automatic workspace saving.
 
 Lensio shares its blue/violet app identity across Windows and Android. Disconnected camera sources and the standalone virtual camera display the Lensio no-signal artwork. Select **LensioCam** in video apps; **OBS Virtual Camera** remains a separate device.

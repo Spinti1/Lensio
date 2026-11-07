@@ -31,28 +31,38 @@ class CameraXManager(
     private var hardwareCapture: HardwareAvcCapture? = null
     private var retiringHardwareCapture: HardwareAvcCapture? = null
     @Volatile private var hardwareRequested=false
-    private var hardwareFailed=false
+    private var hardwarePreferred=false
+    private val hardwareRecovery=HardwareRecoveryPolicy()
+    @Volatile private var captureGeneration=0
+    @Volatile private var lastHardwareError=""
+    private var lastHardwareBindAt=0L
     private val variableFpsCameras=mutableSetOf<String>()
     @Volatile private var hardwareFixedRange=false
     @Volatile private var effectiveExposureIndex=0
     private var gpuPreview: org.webrtc.SurfaceViewRenderer? = null
     var onAvcFrame: ((ByteArray,Int,Int,Int,Boolean,Long)->Unit)? = null
-    var onHardwareFallback: ((String)->Unit)? = null
+    var onHardwareModeChanged: ((Boolean)->Unit)? = null
     fun configureHardwareVideo(context:org.webrtc.EglBase.Context){sharedEglContext=context}
     fun setHardwareVideo(enabled:Boolean):Boolean{
         if(released)return false
-        if(enabled && sharedEglContext==null){onHardwareFallback?.invoke("Hardware codec runtime unavailable");return false}
-        if(enabled && hardwareFailed){onHardwareFallback?.invoke("Hardware AVC previously failed");return false}
+        if(hardwarePreferred!=enabled){hardwareRecovery.reset();lastHardwareError=""}
+        hardwarePreferred=enabled
+        if(enabled&&(hardwareRecovery.pending||hardwareRecovery.blocked))return hardwareRequested
+        if(enabled && sharedEglContext==null){lastHardwareError="Hardware codec runtime unavailable";onHardwareModeChanged?.invoke(false);return false}
         if(hardwareRequested==enabled)return enabled
         hardwareRequested=enabled
+        onHardwareModeChanged?.invoke(enabled)
         bindCamera()
         return hardwareRequested
     }
     fun requestVideoKeyframe(){hardwareCapture?.requestKeyframe()}
-    private fun disableHardwareVideo(reason:String){
-        if(!hardwareRequested||released)return
-        Log.w(tag,"Hardware AVC fallback: $reason")
-        hardwareFailed=true;hardwareRequested=false;onHardwareFallback?.invoke(reason);bindCamera()
+    private fun disableHardwareVideo(reason:String,unsupported:Boolean=false){
+        if(!hardwareRequested||released||hardwareRecovery.pending)return
+        val now=android.os.SystemClock.elapsedRealtime()
+        lastHardwareError=reason.take(180)
+        val fallback=hardwareRecovery.failed(now,unsupported)
+        Log.w(tag,"Hardware AVC ${if(fallback)"temporary fallback" else "restart scheduled"}: $reason; failures=${hardwareRecovery.failures}")
+        if(fallback){hardwareRequested=false;onHardwareModeChanged?.invoke(false);bindCamera()}
     }
     private fun attachGpuPreview(){
         val host=currentPreviewView ?: return
@@ -111,6 +121,9 @@ class CameraXManager(
         "videoCodec" to if(hardwareRequested) "h264" else "jpeg",
         "exposureIndex" to effectiveExposureIndex,
         "encoder" to hardwareCapture?.diagnostics,
+        "hardwareError" to lastHardwareError,
+        "hardwareFailures" to hardwareRecovery.failures,
+        "hardwareRetryPending" to hardwareRecovery.pending,
         "error" to cameraSelectionError,
         "cameras" to CameraCatalog(context).read(findMainCameraId(), cameraIds)))
 
@@ -163,12 +176,20 @@ class CameraXManager(
     /** Recover capture starvation, not slow Wi-Fi. Called on the main thread. */
     fun checkCaptureHealth(streaming: Boolean) {
         val now = android.os.SystemClock.elapsedRealtime()
+        if(streaming && hardwarePreferred && sharedEglContext!=null && hardwareRecovery.takeRetry(now)){
+            Log.i(tag,"Retrying hardware AVC after recovery delay")
+            hardwareRequested=true;onHardwareModeChanged?.invoke(true);bindCamera(currentPreviewView);return
+        }
+        hardwareRecovery.observe(now,hardwareRequested&&hardwareCapture?.outputHealthy==true)
+        if(streaming&&hardwareRequested&&hardwareCapture==null&&lastHardwareBindAt>0&&now-lastHardwareBindAt>=10000){
+            disableHardwareVideo("Camera did not provide a hardware encoder surface");return
+        }
         if(streaming && hardwareRequested && hardwareCapture?.outputStalled==true){
             val id=activeCameraId
             if(hardwareFixedRange && id!=null && variableFpsCameras.add(id)){
                 Log.w(tag,"Camera rejected fixed-rate hardware capture; retry with its adaptive range")
                 bindCamera(currentPreviewView)
-            }else disableHardwareVideo("Hardware encoder stopped producing frames")
+            }else disableHardwareVideo("Hardware encoder stopped producing frames: ${hardwareCapture?.diagnostics}")
             return
         }
         // Give codec startup and its output watchdog time to run before rebuilding the camera.
@@ -285,12 +306,14 @@ class CameraXManager(
     }
 
     fun bindCamera(previewView: PreviewView? = currentPreviewView) {
+        val generation=++captureGeneration
         if (previewView != null) {
             currentPreviewView = previewView
         }
         if (released) return
         val pv = currentPreviewView
         val provider = cameraProvider ?: return
+        if(hardwareRequested)lastHardwareBindAt=android.os.SystemClock.elapsedRealtime()
         lastCaptureAt = android.os.SystemClock.elapsedRealtime()
         imageAnalysis?.clearAnalyzer()
         provider.unbindAll()
@@ -412,6 +435,7 @@ class CameraXManager(
             try {
                 attachGpuPreview()
                 preview!!.setSurfaceProvider { request ->
+                    if(released||generation!=captureGeneration||!hardwareRequested){request.willNotProvideSurface();return@setSurfaceProvider}
                     try {
                         val previous=hardwareCapture ?: retiringHardwareCapture
                         previous?.close()
@@ -420,11 +444,11 @@ class CameraXManager(
                         val front=c2Info?.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_FRONT
                         hardwareCapture=HardwareAvcCapture(sharedEglContext!!,request,sensor,front,
                             selectedInfo?.getSensorRotationDegrees(targetRotation) ?: 0,previous,{gpuPreview},
-                            {lastCaptureAt=android.os.SystemClock.elapsedRealtime();if(previousCameraSelection!=null&&++selectionFrames>=30)previousCameraSelection=null},
-                            {bytes,w,h,rotation,key,time->onAvcFrame?.invoke(bytes,w,h,rotation,key,time)},
-                            {reason->disableHardwareVideo(reason)})
+                            {if(generation==captureGeneration){lastCaptureAt=android.os.SystemClock.elapsedRealtime();if(previousCameraSelection!=null&&++selectionFrames>=30)previousCameraSelection=null}},
+                            {bytes,w,h,rotation,key,time->if(generation==captureGeneration)onAvcFrame?.invoke(bytes,w,h,rotation,key,time)},
+                            {reason,unsupported->if(generation==captureGeneration)disableHardwareVideo(reason,unsupported)})
                         retiringHardwareCapture=null
-                    }catch(error:Exception){request.willNotProvideSurface();android.os.Handler(android.os.Looper.getMainLooper()).post{disableHardwareVideo(error.message?:"AVC surface failed")}}
+                    }catch(error:Exception){request.willNotProvideSurface();android.os.Handler(android.os.Looper.getMainLooper()).post{if(generation==captureGeneration)disableHardwareVideo(error.message?:"AVC surface failed")}}
                 }
                 camera=provider.bindToLifecycle(lifecycleOwner,cameraSelector,preview!!)
                 applySettings()
@@ -680,6 +704,7 @@ class CameraXManager(
 
     fun release() {
         released = true
+        captureGeneration++;hardwarePreferred=false;hardwareRecovery.reset()
         hardwareCapture?.close();hardwareCapture=null;removeGpuPreview()
         orientationListener.disable()
         readyCallbacks.clear()
@@ -689,7 +714,7 @@ class CameraXManager(
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
         previewExecutor.shutdownNow()
-        onAvcFrame=null;onHardwareFallback=null
+        onAvcFrame=null;onHardwareModeChanged=null
         onFrameAvailable = null
         onLensChanged = null
         currentPreviewView = null

@@ -7,6 +7,31 @@ import java.net.Socket
 import java.util.concurrent.atomic.AtomicLong
 
 class StreamingLifecycleTest {
+    @Test fun queuedCodecCommandsCarryTheirOriginalConnectionGeneration(){
+        val sender=NativeStreamSender {System.nanoTime()/1_000_000}
+        val commands=java.util.concurrent.LinkedBlockingQueue<Pair<String,Long>>()
+        sender.onCommandReceived={command,generation->commands.offer(command to generation)}
+        ServerSocket(0).use {server->
+            server.soTimeout=3000
+            try{
+                sender.connect("127.0.0.1",server.localPort)
+                server.accept().use {first->
+                    awaitCondition {sender.isConnected}
+                    first.getOutputStream().write("{\"videoCodec\":\"jpeg\"}\n".toByteArray())
+                    val old=commands.poll(3,java.util.concurrent.TimeUnit.SECONDS)!!
+                    assertEquals(sender.connectionGeneration,old.second)
+                    sender.connect("127.0.0.1",server.localPort,true)
+                    server.accept().use {second->
+                        awaitCondition {sender.isConnected}
+                        second.getOutputStream().write("{\"videoCodec\":\"h264\"}\n".toByteArray())
+                        val current=commands.poll(3,java.util.concurrent.TimeUnit.SECONDS)!!
+                        assertNotEquals("Queued old JPEG command must be rejected by the service",sender.connectionGeneration,old.second)
+                        assertEquals(sender.connectionGeneration,current.second)
+                    }
+                }
+            }finally{sender.close()}
+        }
+    }
     private fun awaitCondition(condition: () -> Boolean) {
         val deadline = System.nanoTime() + 5_000_000_000L
         while (!condition() && System.nanoTime() < deadline) Thread.sleep(10)

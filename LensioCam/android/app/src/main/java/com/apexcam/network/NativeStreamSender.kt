@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** One encoder, one in-flight frame, and socket ownership scoped to a connection generation. */
 class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRealtime() }) {
-    private data class Session(val socket: Socket, val host: String, val port: Int) {
+    private data class Session(val socket: Socket, val host: String, val port: Int,val generation:Long) {
         val output = socket.getOutputStream()
         val outputLock=Any()
         @Volatile var writeStartedAt=0L
@@ -44,9 +44,10 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
     @Volatile private var lastSentAt = 0L
     @Volatile private var busySession: Session? = null
     val isConnected: Boolean get() = session != null
+    val connectionGeneration:Long get()=synchronized(stateLock){generation}
     var deviceIdentityJson: String? = null
-    var onCommandReceived: ((String) -> Unit)? = null
-    var onConnectionChanged: ((Boolean) -> Unit)? = null
+    var onCommandReceived: ((String,Long) -> Unit)? = null
+    var onConnectionChanged: ((Boolean,Long) -> Unit)? = null
     var onConnectedHost: ((String) -> Unit)? = null
     var onPreviewJpeg: ((ByteArray) -> Unit)? = null
     var isPreviewVisible: (() -> Boolean)? = null
@@ -107,7 +108,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                     sock.keepAlive = true
                     sock.sendBufferSize = 64 * 1024
                     sock.connect(InetSocketAddress(host, port), 2500)
-                    val established = Session(sock, host, port)
+                    val established = Session(sock, host, port,ticket)
                     deviceIdentityJson?.let { identity ->
                         val data=identity.toByteArray(Charsets.UTF_8)
                         require(data.size in 1..4096)
@@ -127,7 +128,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                         fpsSince = clock()
                         currentFps = 0
                         onConnectedHost?.invoke(host)
-                        onConnectionChanged?.invoke(true)
+                        onConnectionChanged?.invoke(true,generation)
                         receiveExecutor.execute { receiveCommands(established) }
                     }
                 } catch (e: Exception) {
@@ -135,7 +136,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
                     synchronized(stateLock) {
                         if (ticket == generation && !closed.get()) {
                             closeSocketsLocked()
-                            onConnectionChanged?.invoke(false)
+                            onConnectionChanged?.invoke(false,generation)
                         }
                     }
                     Log.d("NativeStreamSender", "Connection ended: " + e.message)
@@ -149,7 +150,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
             val reader = owner.socket.getInputStream().bufferedReader()
             while (session === owner && !closed.get()) {
                 val line = reader.readLine() ?: break
-                if (session === owner) onCommandReceived?.invoke(line)
+                if (session === owner) onCommandReceived?.invoke(line,owner.generation)
             }
         } catch (_: Exception) {
         } finally {
@@ -162,7 +163,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
             if (session !== owner) return
             generation++
             closeSocketsLocked()
-            onConnectionChanged?.invoke(false)
+            onConnectionChanged?.invoke(false,generation)
         }
     }
 
@@ -272,7 +273,7 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
         synchronized(stateLock) {
             generation++
             closeSocketsLocked()
-            onConnectionChanged?.invoke(false)
+            onConnectionChanged?.invoke(false,generation)
         }
     }
 

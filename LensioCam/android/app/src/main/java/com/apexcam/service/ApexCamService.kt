@@ -115,9 +115,14 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
     private var pipelineStarted = false
     private var reconnectTicks = 0
     private var lastStreamConnectedAt = 0L
+    private var codecNegotiationPending=false
     private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val reconnectRunnable = object : Runnable {
         override fun run() {
+            if(codecNegotiationPending&&nativeSender.isConnected&&android.os.SystemClock.elapsedRealtime()-lastStreamConnectedAt>=2500){
+                codecNegotiationPending=false
+                cameraManager.setHardwareVideo(false);nativeSender.setAvcEnabled(false)
+            }
             cameraManager.checkCaptureHealth(nativeSender.isConnected || httpStreamServer.activeClientCount > 0 ||
                 (lastStreamConnectedAt > 0 && android.os.SystemClock.elapsedRealtime() - lastStreamConnectedAt < 15000))
             nativeSender.checkHealth()
@@ -204,7 +209,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         cameraManager = CameraXManager(this, this)
         if(codecReady)cameraManager.configureHardwareVideo(rootEglBase.eglBaseContext)
         cameraManager.onAvcFrame={bytes,w,h,rotation,key,time->nativeSender.sendAvc(bytes,w,h,rotation,key,time,cachedBatteryLevel,cachedIsCharging,cachedDeviceTemp)}
-        cameraManager.onHardwareFallback={nativeSender.setAvcEnabled(false)}
+        cameraManager.onHardwareModeChanged={enabled->nativeSender.setAvcEnabled(enabled)}
         nativeSender.onVideoKeyframeRequested={cameraManager.requestVideoKeyframe()}
         signalingClient = SignalingClient(this)
         webRtcClient = WebRtcClient(this, rootEglBase, signalingClient)
@@ -242,24 +247,34 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
             }
         }
 
-        nativeSender.onCommandReceived = { cmd ->
+        nativeSender.onCommandReceived = { cmd,generation ->
             try {
                 val json = com.google.gson.JsonParser.parseString(cmd).asJsonObject
-                if(json.has("videoCodec")){
-                    val avc=json.get("videoCodec").asString=="h264" && json.get("videoProtocol")?.asInt==1
-                    runOnUiThread { val enabled=cameraManager.setHardwareVideo(avc);nativeSender.setAvcEnabled(enabled);cameraManager.requestVideoKeyframe() }
-                }else if(json.has("videoKeyframe")){cameraManager.requestVideoKeyframe()}
-                else onCameraControlReceived(json)
+                runOnUiThread {
+                    try {
+                        if(!nativeSender.isConnected||generation!=nativeSender.connectionGeneration)return@runOnUiThread
+                        if(json.has("videoCodec")){
+                            codecNegotiationPending=false
+                            val avc=json.get("videoCodec").asString=="h264" && json.get("videoProtocol")?.asInt==1
+                            val enabled=cameraManager.setHardwareVideo(avc);nativeSender.setAvcEnabled(enabled);cameraManager.requestVideoKeyframe()
+                        }else if(json.has("videoKeyframe")){cameraManager.requestVideoKeyframe()}
+                        else onCameraControlReceived(json)
+                    }catch(_:Exception){Log.w(tag,"Ignored invalid camera command")}
+                }
             } catch (e: Exception) {}
         }
 
-        nativeSender.onConnectionChanged = { connected ->
+        nativeSender.onConnectionChanged = { connected,generation ->
             runOnUiThread {
+                if(generation!=nativeSender.connectionGeneration)return@runOnUiThread
                 if (connected) {
                     lastStreamConnectedAt = android.os.SystemClock.elapsedRealtime()
+                    codecNegotiationPending=true
                     cameraManager.checkCaptureHealth(true)
                 }
-                if(!connected){nativeSender.setAvcEnabled(false);cameraManager.setHardwareVideo(false)}
+                // A Wi-Fi interruption must not tear down and recreate a healthy MediaCodec/HAL.
+                // The next peer negotiates its codec; shutdown still releases the camera normally.
+                if(!connected){codecNegotiationPending=false;nativeSender.setAvcEnabled(false)}
                 isStreamConnected.value = connected || httpStreamServer.activeClientCount > 0
             }
         }

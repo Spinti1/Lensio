@@ -18,11 +18,12 @@ internal class HardwareAvcCapture(
     private val preview: () -> VideoSink?,
     private val onFrame: () -> Unit,
     private val onEncoded: (ByteArray, Int, Int, Int, Boolean, Long) -> Unit,
-    private val onFailure: (String) -> Unit
+    private val onFailure: (String,Boolean) -> Unit
 ) {
     private val size=request.resolution.also { require(it.width%2==0 && it.height%2==0 && it.width.toLong()*it.height<=1920*1080) }
     private val closed = AtomicBoolean(false)
     private val resourcesReleased = AtomicBoolean(false)
+    private val failurePosted=AtomicBoolean(false)
     private val encoderReleased=java.util.concurrent.CountDownLatch(1)
     private val helper = SurfaceTextureHelper.create("Lensio-AVC-texture", sharedContext)
         ?: throw IllegalStateException("Camera texture unavailable")
@@ -40,6 +41,7 @@ internal class HardwareAvcCapture(
     @Volatile private var inputFrames=0
     val diagnostics: String get()="inputs=$inputFrames output=$hasOutput idleMs=${android.os.SystemClock.elapsedRealtime()-lastOutputAt}"
     val outputStalled: Boolean get()=android.os.SystemClock.elapsedRealtime()-lastOutputAt>=if(hasOutput)6000 else 10000
+    val outputHealthy:Boolean get()=hasOutput&&!closed.get()&&android.os.SystemClock.elapsedRealtime()-lastOutputAt<2000
     init {
         helper.setTextureSize(size.width,size.height)
         helper.handler.post {
@@ -50,8 +52,8 @@ internal class HardwareAvcCapture(
                     else !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android.")
                 }
                 val codec=factory.supportedCodecs.firstOrNull { it.name.equals("H264",true) && it.params["packetization-mode"]=="1" }
-                    ?: throw IllegalStateException("No hardware H.264 encoder")
-                val active=factory.createEncoder(codec) ?: throw IllegalStateException("Hardware AVC unavailable")
+                    ?: throw UnsupportedOperationException("No hardware H.264 encoder")
+                val active=factory.createEncoder(codec) ?: throw UnsupportedOperationException("Hardware AVC unavailable")
                 encoder=active
                 android.util.Log.i("LensioAVC","Encoder: "+active.implementationName+" "+size.width+"x"+size.height)
                 val bitrate=if(size.width*size.height>1280*720)24000 else 12000
@@ -89,12 +91,14 @@ internal class HardwareAvcCapture(
                 }
                 if(closed.get())return@post
                 request.provideSurface(surface,{ it.run() }) { closed.set(true);releaseResources() }
-            } catch(error:Exception){request.willNotProvideSurface();fail(error.message?:"Hardware AVC failed");releaseResources()}
+            } catch(error:Exception){request.willNotProvideSurface();fail(error.message?:"Hardware AVC failed",error is UnsupportedOperationException);releaseResources()}
         }
     }
     fun requestKeyframe(){keyframe.set(true)}
     fun setRotation(degrees:Int){if(degrees in listOf(0,90,180,270))rotation=degrees}
-    private fun fail(message:String){if(!closed.get())Handler(Looper.getMainLooper()).post{if(!closed.get())onFailure(message)}}
+    private fun fail(message:String,unsupported:Boolean=false){
+        if(!closed.get()&&failurePosted.compareAndSet(false,true))Handler(Looper.getMainLooper()).post{if(!closed.get())onFailure(message,unsupported)}
+    }
     fun close(){
         if(!closed.compareAndSet(false,true))return
         helper.handler.post { releaseEncoder() }

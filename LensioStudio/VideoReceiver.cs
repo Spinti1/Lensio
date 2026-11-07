@@ -74,7 +74,7 @@ namespace ApexCam
         private void RequestKeyframe(){if((DateTime.UtcNow-lastKeyRequest).TotalMilliseconds<1000)return;lastKeyRequest=DateTime.UtcNow;SendControl("{\"videoKeyframe\":true}");}
         private void DecodeLoop()
         {
-            AvcVideoDecoder decoder=null;int decoderWidth=0,decoderHeight=0;
+            AvcVideoDecoder decoder=null;int decoderWidth=0,decoderHeight=0,failedRecoveries=0,healthyFrames=0;bool softwareOnly=false;
             try {while(isRunning){
                 frameReadyEvent.WaitOne(40);if(!isRunning)break;
                 while(isRunning){
@@ -86,18 +86,32 @@ namespace ApexCam
                             if(decoder==null||decoderWidth!=packet.Width||decoderHeight!=packet.Height){
                                 if(decoder!=null)decoder.Dispose();decoder=null;
                                 if(!packet.Keyframe){RequestKeyframe();continue;}
-                                decoder=new AvcVideoDecoder(packet.Width,packet.Height,true);decoderWidth=packet.Width;decoderHeight=packet.Height;
+                                // The native constructor already falls back to software if GPU setup fails.
+                                decoder=new AvcVideoDecoder(packet.Width,packet.Height,!softwareOnly);
+                                decoderWidth=packet.Width;decoderHeight=packet.Height;
                                 ActiveCodec=decoder.IsHardware?"H.264 GPU":"H.264 CPU";
                                 LogConnection("H.264 decoder: "+(decoder.IsHardware?"D3D11 hardware":"Windows software")+" "+decoderWidth+"x"+decoderHeight);
                             }
-                            decoder.Decode(packet.JpegBytes,packet.Timestamp,packet.Rotation,bmp=>DeliverFrame(packet,bmp));
+                            decoder.Decode(packet.JpegBytes,packet.Timestamp,packet.Rotation,bmp=>{
+                                DeliverFrame(packet,bmp);
+                                if(++healthyFrames>=60){failedRecoveries=0;healthyFrames=60;}
+                            });
                         }else{
-                            if(decoder!=null){decoder.Dispose();decoder=null;}ActiveCodec="JPEG";
+                            if(decoder!=null){decoder.Dispose();decoder=null;LogConnection("Phone switched to JPEG");}ActiveCodec="JPEG";
                             using(var ms=new MemoryStream(packet.JpegBytes))using(var bmp=new Bitmap(ms))DeliverFrame(packet,bmp);
                         }
                     }catch(Exception error){
                         if(decoder!=null){decoder.Dispose();decoder=null;}
-                        if(packet.Avc){avcRejected=true;lock(packetGate){avcPackets.Clear();queuedBytes=0;waitingForKey=true;}LogConnection("H.264 fallback: "+error.Message);SendControl("{\"videoCodec\":\"jpeg\"}");}
+                        if(packet.Avc){
+                            healthyFrames=0;failedRecoveries++;
+                            lock(packetGate){avcPackets.Clear();queuedBytes=0;waitingForKey=true;}
+                            if(failedRecoveries<=2){
+                                if(failedRecoveries==2)softwareOnly=true;
+                                LogConnection("H.264 resync "+failedRecoveries+": "+error.Message);RequestKeyframe();
+                            }else{
+                                avcRejected=true;LogConnection("H.264 fallback after bounded recovery: "+error.Message);SendControl("{\"videoCodec\":\"jpeg\"}");
+                            }
+                        }
                     }
                 }
             }}finally{if(decoder!=null)decoder.Dispose();}

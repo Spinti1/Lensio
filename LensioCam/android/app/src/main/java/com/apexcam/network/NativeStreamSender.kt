@@ -80,7 +80,12 @@ class NativeStreamSender(private val clock: () -> Long = { SystemClock.elapsedRe
         val owner=session ?: return
         if(!avcEnabled||closed.get()||bytes.isEmpty()||bytes.size>4*1024*1024)return
         synchronized(avcQueue){
-            if(avcNeedsKey.get()&&!key)return
+            if(avcNeedsKey.get()&&!key){
+                // Reassert the local flag if an earlier sync input was dropped by
+                // MediaCodec. Capture throttles requests; this sends no network RPC.
+                onVideoKeyframeRequested?.invoke()
+                return
+            }
             if(!avcQueue.offer(AvcPacket(owner,bytes,width,height,rotation,key,timestamp,battery,charging,temp))){
                 avcQueue.clear();avcNeedsKey.set(true);onVideoKeyframeRequested?.invoke()
                 if(key){avcQueue.offer(AvcPacket(owner,bytes,width,height,rotation,key,timestamp,battery,charging,temp));avcNeedsKey.set(false)}

@@ -24,6 +24,9 @@ internal class HardwareRecoveryPolicy {
     }
     fun observe(now:Long,healthy:Boolean){
         if(!healthy){healthySince=null;return}
+        // A transient stall may clear before the scheduled restart. Do not tear
+        // down a live camera in that case; still require sustained output to reset failures.
+        if(failures<=2&&!unavailable)retryAt=Long.MAX_VALUE
         if(healthySince==null)healthySince=now
         if(now-healthySince!!>=30_000){failures=0;retryAt=Long.MAX_VALUE}
     }

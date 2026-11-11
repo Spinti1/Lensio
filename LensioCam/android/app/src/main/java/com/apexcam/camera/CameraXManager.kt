@@ -176,11 +176,11 @@ class CameraXManager(
     /** Recover capture starvation, not slow Wi-Fi. Called on the main thread. */
     fun checkCaptureHealth(streaming: Boolean) {
         val now = android.os.SystemClock.elapsedRealtime()
+        hardwareRecovery.observe(now,hardwareRequested&&hardwareCapture?.outputHealthy==true)
         if(streaming && hardwarePreferred && sharedEglContext!=null && hardwareRecovery.takeRetry(now)){
             Log.i(tag,"Retrying hardware AVC after recovery delay")
             hardwareRequested=true;onHardwareModeChanged?.invoke(true);bindCamera(currentPreviewView);return
         }
-        hardwareRecovery.observe(now,hardwareRequested&&hardwareCapture?.outputHealthy==true)
         if(streaming&&hardwareRequested&&hardwareCapture==null&&lastHardwareBindAt>0&&now-lastHardwareBindAt>=10000){
             disableHardwareVideo("Camera did not provide a hardware encoder surface");return
         }

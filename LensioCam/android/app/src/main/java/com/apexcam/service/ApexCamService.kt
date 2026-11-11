@@ -49,6 +49,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
     private var wifiLock: WifiManager.WifiLock? = null
     var audioReceiverEngine: com.apexcam.audio.AudioReceiverEngine? = null
         private set
+    private var audioReceiverHost:String?=null
     var micCaptureEngine: com.apexcam.audio.MicCaptureEngine? = null
         private set
     private val tag = "LensioStreamingService"
@@ -235,7 +236,11 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
             Log.d(tag, "Cerere de reconectare primita prin HTTP")
             nativeSender.disconnect()
         }
-        httpStreamServer.cameraCatalogProvider = { cameraManager.cameraCatalogJson() }
+        httpStreamServer.cameraCatalogProvider = {
+            val catalog=com.google.gson.JsonParser.parseString(cameraManager.cameraCatalogJson()).asJsonObject
+            catalog.add("pcAudio",com.google.gson.Gson().toJsonTree(audioReceiverEngine?.diagnostics?:mapOf("running" to false)))
+            catalog.toString()
+        }
         httpStreamServer.start()
         phoneIpState.value = UdpDiscovery.getLocalIpAddress()
 
@@ -243,6 +248,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
             runOnUiThread {
                 savePcIp(host)
                 currentServerUrl = "$host:8556"
+                if(isPcAudioActive.value)startPcAudio(host)
 
             }
         }
@@ -316,7 +322,9 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
     fun checkUpdateNow() { checkForUpdates(force = true, manual = true) }
     fun installAvailableUpdate() { startUpdateDownload() }
     fun startPcAudio(targetHost: String) {
-        if (audioReceiverEngine == null) {
+        if (audioReceiverEngine == null || !audioReceiverEngine!!.active || audioReceiverHost!=targetHost) {
+            audioReceiverEngine?.stop()
+            audioReceiverHost=targetHost
             audioReceiverEngine = com.apexcam.audio.AudioReceiverEngine(targetHost, 44100).apply {
                 start()
             }
@@ -327,6 +335,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
     fun stopPcAudio() {
         audioReceiverEngine?.stop()
         audioReceiverEngine = null
+        audioReceiverHost=null
         updateNotification()
     }
 

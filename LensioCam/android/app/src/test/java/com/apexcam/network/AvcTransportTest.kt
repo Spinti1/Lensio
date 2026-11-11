@@ -16,8 +16,11 @@ class AvcTransportTest {
     sender.connect("127.0.0.1",server.localPort,true)
     server.accept().use { peer ->
      peer.soTimeout=3000;awaitConnected(sender)
+     val syncRequests=java.util.concurrent.atomic.AtomicInteger()
+     sender.onVideoKeyframeRequested={syncRequests.incrementAndGet();Unit}
      sender.setAvcEnabled(true)
      sender.sendAvc(byteArrayOf(0,0,0,1,0x41),1280,720,90,false,1000,54,true,31f)
+     assertEquals("Dropped sync input must be requested again",2,syncRequests.get())
      Thread.sleep(20);assertEquals("Delta sent before sync frame",0,peer.getInputStream().available())
      val payload=byteArrayOf(0,0,0,1,0x65,1,2,3)
      sender.sendAvc(payload,1280,720,90,true,1000000,54,true,31f)

@@ -6,8 +6,6 @@ import android.media.AudioTrack
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
-import java.io.EOFException
-import java.io.InputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -25,10 +23,8 @@ interface AudioStatusListener {
 }
 
 /**
- * Ultra-low-latency, jitter-proof audio receiver and AudioTrack playback engine for Android.
- * Features dual-transport with automatic intelligent failover:
- * 1. Primary: High-priority TCP stream (lossless, immune to packet drops caused by other Wi-Fi devices streaming video).
- * 2. Fallback: UDP sub-MTU stream with advanced Jitter Buffer & Packet Loss Concealment (PLC).
+ * Buffered PCM receiver and AudioTrack playback engine.
+ * Tries TCP first, then UDP with jitter buffering and packet-loss concealment.
  */
 class AudioReceiverEngine(
     private val serverIp: String,
@@ -61,6 +57,14 @@ class AudioReceiverEngine(
     private var playbackThread: Thread? = null
 
     private var volume = 1.0f
+    @Volatile private var receivedFrames=0L
+    @Volatile private var playedFrames=0L
+    @Volatile private var playbackRestarts=0
+    @Volatile private var lastError=""
+    val diagnostics:Map<String,Any> get()=mapOf("running" to isRunning,"receivedFrames" to receivedFrames,
+        "playedFrames" to playedFrames,"playbackRestarts" to playbackRestarts,"error" to lastError,
+        "bufferedMs" to jitterBuffer.bufferedMs,"underruns" to jitterBuffer.underruns)
+    val active:Boolean get()=isRunning&&receiveThread?.isAlive==true&&playbackThread?.isAlive==true
 
     fun setBufferLatency(latencyMs: Int) {
         targetLatencyMs = latencyMs
@@ -92,7 +96,7 @@ class AudioReceiverEngine(
             // Try lossless TCP first for both USB and Wi-Fi to eliminate packet drops during video downloads on other devices
             val tcpSuccess = runReceiveLoopTcp()
             if (!tcpSuccess && isRunning && !isUsbCable) {
-                Log.i(TAG, "Conexiunea TCP nu este disponibilă, comutare pe transport UDP cu PLC...")
+                Log.i(TAG, "TCP unavailable; switching to UDP audio")
                 runReceiveLoopUdp()
             }
         }, if (isUsbCable) "AudioUsbReceiveThread" else "AudioReceiveThread").apply {
@@ -137,22 +141,19 @@ class AudioReceiverEngine(
 
             receiveThread?.interrupt()
             playbackThread?.interrupt()
+
+            // Only the playback worker releases its AudioTrack. Closing it from here
+            // races a blocking write and can invalidate the next playback instance.
+            try { playbackThread?.join(1500) } catch (_: InterruptedException) {}
             receiveThread = null
             playbackThread = null
-
-            try {
-                audioTrack?.stop()
-                audioTrack?.release()
-            } catch (_: Exception) {}
-            audioTrack = null
 
             listener?.onDisconnected()
         }.start()
     }
 
     /**
-     * Lossless TCP receiver loop.
-     * Guarantees zero dropped packets, zero waveform tearing, and immunity to Wi-Fi traffic bursts.
+     * Reads complete protocol frames across partial reads and socket timeouts.
      * Returns true if connection was successfully used, or false if initial connection failed.
      */
     private fun runReceiveLoopTcp(): Boolean {
@@ -183,12 +184,13 @@ class AudioReceiverEngine(
 
                 while (isRunning) {
                     try {
-                        readFully(inputStream, packet, 0, PACKET_SIZE)
+                        if(!AudioPacketIO.readFrame(inputStream,packet){isRunning})break
 
                         // Validate Magic Bytes 0x53, 0x41 ('SA')
                         if (packet[0] == 0x53.toByte() && packet[1] == 0x41.toByte()) {
                             val seq = ((packet[2].toInt() and 0xFF) shl 8) or (packet[3].toInt() and 0xFF)
                             jitterBuffer.writeFrame(seq, packet, HEADER_SIZE, PAYLOAD_SIZE)
+                            receivedFrames++
                         }
 
                         val currentMs = SystemClock.elapsedRealtime()
@@ -228,14 +230,6 @@ class AudioReceiverEngine(
         return connectedAtLeastOnce
     }
 
-    private fun readFully(stream: InputStream, buffer: ByteArray, offset: Int, length: Int) {
-        var totalRead = 0
-        while (totalRead < length && isRunning) {
-            val read = stream.read(buffer, offset + totalRead, length - totalRead)
-            if (read < 0) throw EOFException("Conexiunea audio TCP a fost închisă")
-            totalRead += read
-        }
-    }
 
     /**
      * Fallback UDP receiver loop for Wi-Fi environments where TCP port is blocked.
@@ -273,7 +267,8 @@ class AudioReceiverEngine(
                         lastPingSent = nowMs
                     }
 
-                    socket?.receive(packet)
+                    val current=socket ?: break
+                    AudioPacketIO.receive(current,packet)
 
                     if (packet.length == PACKET_SIZE) {
                         val data = packet.data
@@ -284,6 +279,7 @@ class AudioReceiverEngine(
                             }
                             val seq = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
                             jitterBuffer.writeFrame(seq, data, HEADER_SIZE, PAYLOAD_SIZE)
+                            receivedFrames++
                         }
                     } else if (packet.length > 0) {
                         val msg = String(packet.data, 0, packet.length, Charsets.US_ASCII)
@@ -326,6 +322,8 @@ class AudioReceiverEngine(
     }
 
     private fun runPlaybackLoop() {
+        while(isRunning){
+        var ownedTrack:AudioTrack?=null
         try {
             val minBufSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNELS, ENCODING)
             val bufferSize = Math.max(minBufSize, CircularAudioBuffer.FRAME_BYTES * 6)
@@ -348,6 +346,7 @@ class AudioReceiverEngine(
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
+            ownedTrack=track
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 try {
@@ -364,18 +363,20 @@ class AudioReceiverEngine(
 
             while (isRunning) {
                 jitterBuffer.read(readChunk, 0, readChunk.size)
-                track.write(readChunk, 0, readChunk.size, AudioTrack.WRITE_BLOCKING)
+                if(!AudioPacketIO.writeFrame(readChunk,{isRunning}){offset,length->track.write(readChunk,offset,length,AudioTrack.WRITE_BLOCKING)})break
+                playedFrames++
             }
         } catch (e: Exception) {
             if (isRunning) {
+                playbackRestarts++;lastError=(e.message?:"Audio playback failed").take(160)
                 listener?.onError("Audio playback error: ${e.message}")
             }
         } finally {
-            try {
-                audioTrack?.stop()
-                audioTrack?.release()
-            } catch (_: Exception) {}
-            audioTrack = null
+            runCatching{ownedTrack?.stop()}
+            runCatching{ownedTrack?.release()}
+            if(audioTrack===ownedTrack)audioTrack = null
+        }
+        if(isRunning)try{Thread.sleep(250)}catch(_:InterruptedException){break}
         }
     }
 }

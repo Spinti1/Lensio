@@ -34,6 +34,9 @@ internal class HardwareAvcCapture(
     private val encoderThread=android.os.HandlerThread("Lensio-AVC-encoder").apply {start()}
     private val encoderHandler=Handler(encoderThread.looper)
     private var encoder: VideoEncoder? = null
+    private var texturePool:CameraTexturePool?=null
+    private val pendingFrames=LatestFrameMailbox<VideoFrame>{it.release()}
+    private val encodeScheduled=AtomicBoolean(false)
     @Volatile private var rotation = initialRotation
     private val textureCorrection=android.graphics.Matrix().apply {
         setValues(CameraTextureOrientation.correction(sensorOrientation,frontFacing))
@@ -45,7 +48,10 @@ internal class HardwareAvcCapture(
     @Volatile private var hasOutput=false
     @Volatile private var inputFrames=0
     @Volatile private var outputFrames=0
-    val diagnostics: String get()="inputs=$inputFrames outputs=$outputFrames output=$hasOutput idleMs=${android.os.SystemClock.elapsedRealtime()-lastOutputAt}"
+    @Volatile private var poolDrops=0
+    @Volatile private var queuedDrops=0
+    @Volatile private var copyUs=0L
+    val diagnostics: String get()="inputs=$inputFrames outputs=$outputFrames output=$hasOutput poolDrops=$poolDrops queuedDrops=$queuedDrops copyUs=$copyUs idleMs=${android.os.SystemClock.elapsedRealtime()-lastOutputAt}"
     val outputStalled: Boolean get()=android.os.SystemClock.elapsedRealtime()-lastOutputAt>=if(hasOutput)6000 else 10000
     val outputHealthy:Boolean get()=hasOutput&&!closed.get()&&android.os.SystemClock.elapsedRealtime()-lastOutputAt<2000
     init {
@@ -79,6 +85,7 @@ internal class HardwareAvcCapture(
                 helper.handler.post cameraSurface@{
                     if(closed.get())return@cameraSurface
                     try {
+                        texturePool=CameraTexturePool(helper.handler,size.width,size.height)
                         helper.startListening { frame -> deliverTexture(frame,active) }
                         request.provideSurface(surface,{ it.run() }) { closed.set(true);releaseResources() }
                     }catch(error:Exception){request.willNotProvideSurface();fail(error.message?:"Camera surface delivery failed");releaseResources()}
@@ -92,28 +99,49 @@ internal class HardwareAvcCapture(
             onFrame();inputFrames++
             val source=frame.buffer as VideoFrame.TextureBuffer
             val corrected=source.applyTransformMatrix(textureCorrection,source.width,source.height)
-            val view=VideoFrame(corrected,rotation,frame.timestampNs)
-            var posted=false
+            // Evict an old queued copy before acquiring a reusable GPU slot.
+            pendingFrames.take()?.let{queuedDrops++;it.release()}
+            val started=System.nanoTime()
+            val copied=try{texturePool?.copy(corrected)}finally{corrected.release()}
+            copyUs=(System.nanoTime()-started)/1000
+            if(copied==null){poolDrops++;return}
+            if(closed.get()){copied.release();return}
+            val view=VideoFrame(copied,rotation,frame.timestampNs)
+            var handedOff=false
             try {
                 preview()?.onFrame(view)
-                // The retained texture prevents the helper from handing out another frame
-                // until encode finishes. At most one GPU frame is pending; no RGB copy/queue.
-                posted=encoderHandler.post {
+                handedOff=true
+                if(pendingFrames.offer(view))scheduleEncoding(active)
+            }finally{if(!handedOff)view.release()}
+        }catch(error:Exception){fail(error.message?:"Hardware texture delivery failed")}
+    }
+    private fun scheduleEncoding(active:VideoEncoder){
+        if(!encodeScheduled.compareAndSet(false,true))return
+        if(!encoderHandler.post {
+            try{
+                while(!closed.get()){
+                    val view=pendingFrames.take() ?: break
                     try {
-                        if(!closed.get()){
                             val now=android.os.SystemClock.elapsedRealtime()
                             val sync=keyframe.get()&&(lastKeyframeAt==0L||now-lastKeyframeAt>=500)
                             if(sync){keyframe.set(false);lastKeyframeAt=now}
                             val type=if(sync)EncodedImage.FrameType.VideoFrameKey else EncodedImage.FrameType.VideoFrameDelta
                             val status=active.encode(view,VideoEncoder.EncodeInfo(arrayOf(type)))
+                            // NO_OUTPUT can mean the encoder rejected this input while its
+                            // queue was full. Keep the sync request until an input is accepted.
+                            if(sync&&status!=VideoCodecStatus.OK)keyframe.set(true)
                             if(status==VideoCodecStatus.OK||status==VideoCodecStatus.NO_OUTPUT)failures=0
                             else if(++failures>=3)fail("Hardware AVC encode: $status")
-                        }
                     }catch(error:Exception){fail(error.message?:"Hardware texture encoding failed")}
                     finally{view.release()}
                 }
-            }finally{if(!posted)view.release()}
-        }catch(error:Exception){fail(error.message?:"Hardware texture delivery failed")}
+            }finally{
+                encodeScheduled.set(false)
+                // A new frame races with an empty take: its producer schedules again
+                // after this flag clears, or this final handoff does so itself.
+                if(!closed.get()&&pendingFrames.hasPending)scheduleEncoding(active)
+            }
+        }){encodeScheduled.set(false);pendingFrames.close()}
     }
     fun requestKeyframe(){keyframe.set(true)}
     fun setRotation(degrees:Int){if(degrees in listOf(0,90,180,270))rotation=degrees}
@@ -122,6 +150,7 @@ internal class HardwareAvcCapture(
     }
     fun close(){
         if(!closed.compareAndSet(false,true))return
+        pendingFrames.close()
         shutdownEncoder()
         // Keep draining the camera texture until CameraX confirms that the HAL released it.
         // Releasing a provided Surface during unbind can wedge the next camera session.
@@ -132,11 +161,14 @@ internal class HardwareAvcCapture(
         shutdownEncoder()
         helper.handler.post {
             helper.stopListening()
-            surface.release();helper.dispose()
+            surface.release()
+            val pool=texturePool
+            if(pool!=null)pool.close{helper.dispose()} else helper.dispose()
         }
     }
     private fun shutdownEncoder(){
         if(!encoderShutdown.compareAndSet(false,true))return
+        pendingFrames.close()
         encoderHandler.post {
             try{runCatching{encoder?.release()}}
             finally{encoder=null;encoderReleased.countDown();encoderThread.quitSafely()}

@@ -14,12 +14,12 @@ internal class HardwareAvcCapture(
     sensorOrientation: Int,
     frontFacing: Boolean,
     initialRotation: Int,
-    predecessor: HardwareAvcCapture?,
+    predecessor: HardwareCapture?,
     private val preview: () -> VideoSink?,
     private val onFrame: () -> Unit,
     private val onEncoded: (ByteArray, Int, Int, Int, Boolean, Long) -> Unit,
     private val onFailure: (String,Boolean) -> Unit
-) {
+) : HardwareCapture {
     private val size=request.resolution.also { require(it.width%2==0 && it.height%2==0 && it.width.toLong()*it.height<=1920*1080) }
     private val closed = AtomicBoolean(false)
     private val resourcesReleased = AtomicBoolean(false)
@@ -51,14 +51,14 @@ internal class HardwareAvcCapture(
     @Volatile private var poolDrops=0
     @Volatile private var queuedDrops=0
     @Volatile private var copyUs=0L
-    val diagnostics: String get()="inputs=$inputFrames outputs=$outputFrames output=$hasOutput poolDrops=$poolDrops queuedDrops=$queuedDrops copyUs=$copyUs idleMs=${android.os.SystemClock.elapsedRealtime()-lastOutputAt}"
-    val outputStalled: Boolean get()=android.os.SystemClock.elapsedRealtime()-lastOutputAt>=if(hasOutput)6000 else 10000
-    val outputHealthy:Boolean get()=hasOutput&&!closed.get()&&android.os.SystemClock.elapsedRealtime()-lastOutputAt<2000
+    override val diagnostics: String get()="input=texture inputs=$inputFrames outputs=$outputFrames output=$hasOutput poolDrops=$poolDrops queuedDrops=$queuedDrops copyUs=$copyUs idleMs=${android.os.SystemClock.elapsedRealtime()-lastOutputAt}"
+    override val outputStalled: Boolean get()=android.os.SystemClock.elapsedRealtime()-lastOutputAt>=if(hasOutput)6000 else 10000
+    override val outputHealthy:Boolean get()=hasOutput&&!closed.get()&&android.os.SystemClock.elapsedRealtime()-lastOutputAt<2000
     init {
         helper.setTextureSize(size.width,size.height)
         encoderHandler.post encoderInit@{
             try {
-                check(predecessor?.encoderReleased?.await(5,java.util.concurrent.TimeUnit.SECONDS)!=false){"Previous hardware encoder did not release"}
+                check(predecessor?.awaitReleased(5000)!=false){"Previous hardware encoder did not release"}
                 if(closed.get())return@encoderInit
                 val factory=HardwareVideoEncoderFactory(sharedContext,false,false) { info ->
                     if(android.os.Build.VERSION.SDK_INT>=29)info.isHardwareAccelerated
@@ -143,12 +143,13 @@ internal class HardwareAvcCapture(
             }
         }){encodeScheduled.set(false);pendingFrames.close()}
     }
-    fun requestKeyframe(){keyframe.set(true)}
-    fun setRotation(degrees:Int){if(degrees in listOf(0,90,180,270))rotation=degrees}
+    override fun requestKeyframe(){keyframe.set(true)}
+    override fun setRotation(degrees:Int){if(degrees in listOf(0,90,180,270))rotation=degrees}
+    override fun awaitReleased(timeoutMs:Long)=encoderReleased.await(timeoutMs,java.util.concurrent.TimeUnit.MILLISECONDS)
     private fun fail(message:String,unsupported:Boolean=false){
         if(!closed.get()&&failurePosted.compareAndSet(false,true))Handler(Looper.getMainLooper()).post{if(!closed.get())onFailure(message,unsupported)}
     }
-    fun close(){
+    override fun close(){
         if(!closed.compareAndSet(false,true))return
         pendingFrames.close()
         shutdownEncoder()

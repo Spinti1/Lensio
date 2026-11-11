@@ -78,7 +78,7 @@ fun FloatingControls(
 
                 if (framesCount > 0) {
                     Text(
-                        text = "[$framesCount c.]",
+                        text = "$framesCount frames",
                         color = Color(0xFF38BDF8),
                         fontSize = 10.5.sp
                     )

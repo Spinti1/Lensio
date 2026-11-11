@@ -28,8 +28,11 @@ class CameraXManager(
     private val lifecycleOwner: LifecycleOwner
 ) {
     private var sharedEglContext: org.webrtc.EglBase.Context? = null
-    private var hardwareCapture: HardwareAvcCapture? = null
-    private var retiringHardwareCapture: HardwareAvcCapture? = null
+    private var hardwareCapture: HardwareCapture? = null
+    private var retiringHardwareCapture: HardwareCapture? = null
+    // The A21s vendor HAL exhausted its FD table on the camera texture path.
+    // Keep H.264 hardware compression but use CPU-readable camera buffers there.
+    private var preferYuvHardware=android.os.Build.DEVICE.equals("a21s",true)
     @Volatile private var hardwareRequested=false
     private var hardwarePreferred=false
     private val hardwareRecovery=HardwareRecoveryPolicy()
@@ -60,6 +63,7 @@ class CameraXManager(
         if(!hardwareRequested||released||hardwareRecovery.pending)return
         val now=android.os.SystemClock.elapsedRealtime()
         lastHardwareError=reason.take(180)
+        if(!unsupported&&hardwareCapture is HardwareAvcCapture)preferYuvHardware=true
         val fallback=hardwareRecovery.failed(now,unsupported)
         Log.w(tag,"Hardware AVC ${if(fallback)"temporary fallback" else "restart scheduled"}: $reason; failures=${hardwareRecovery.failures}")
         if(fallback){hardwareRequested=false;onHardwareModeChanged?.invoke(false);bindCamera()}
@@ -119,6 +123,7 @@ class CameraXManager(
         "stabilization" to stabilizationMode,
         "targetFpsRange" to activeFpsRange,
         "videoCodec" to if(hardwareRequested) "h264" else "jpeg",
+        "hardwareInput" to if(preferYuvHardware) "yuv" else "texture",
         "exposureIndex" to effectiveExposureIndex,
         "encoder" to hardwareCapture?.diagnostics,
         "hardwareError" to lastHardwareError,
@@ -431,7 +436,7 @@ class CameraXManager(
             if (pv != null) it.setSurfaceProvider(pv.surfaceProvider)
         }
 
-        if(hardwareRequested && sharedEglContext!=null){
+        if(hardwareRequested && sharedEglContext!=null&&!preferYuvHardware){
             try {
                 attachGpuPreview()
                 preview!!.setSurfaceProvider { request ->
@@ -470,8 +475,30 @@ class CameraXManager(
 
         imageAnalysis = analysisBuilder.build().also { analysis ->
             analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                deliverFrame(imageProxy)
+                val active=hardwareCapture
+                if(generation!=captureGeneration||released)imageProxy.close()
+                else if(hardwareRequested&&active is HardwareYuvCapture)active.accept(imageProxy)
+                else deliverFrame(imageProxy)
             }
+        }
+
+        if(hardwareRequested&&preferYuvHardware){
+            try{
+                attachGpuPreview()
+                val previous=retiringHardwareCapture
+                previous?.close()
+                hardwareCapture=HardwareYuvCapture(previous,
+                    selectedInfo?.getSensorRotationDegrees(targetRotation) ?: 0,{gpuPreview},
+                    {if(generation==captureGeneration){lastCaptureAt=android.os.SystemClock.elapsedRealtime();if(previousCameraSelection!=null&&++selectionFrames>=30)previousCameraSelection=null}},
+                    {bytes,w,h,rotation,key,time->if(generation==captureGeneration)onAvcFrame?.invoke(bytes,w,h,rotation,key,time)},
+                    {reason,unsupported->if(generation==captureGeneration)disableHardwareVideo(reason,unsupported)})
+                retiringHardwareCapture=null
+                // Never add a Preview camera output here: that would reintroduce
+                // the HAL's GPU buffer/fence path. The copied I420 also feeds preview.
+                camera=provider.bindToLifecycle(lifecycleOwner,cameraSelector,imageAnalysis!!)
+                applySettings()
+                return
+            }catch(error:Exception){disableHardwareVideo(error.message?:"Hardware YUV camera binding failed");return}
         }
 
         try {

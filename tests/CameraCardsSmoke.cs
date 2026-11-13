@@ -37,10 +37,24 @@ class CameraCardsSmoke {
   Check(scene.GetLayersSnapshot()[0]==overlay&&scene.GetLayersSnapshot()[1]==a,"Drop order differs from compositor order");
   using(var image=new Bitmap(192,108)){using(var g=Graphics.FromImage(image))scene.RenderScene(g,192,108);Check(image.GetPixel(90,50).ToArgb()==Color.Magenta.ToArgb(),"Overlay is obscured by camera");}
   using(var frame=new Bitmap(16,9))Call(f,"ProcessDeviceFrame","a",frame,17,true,25f,30,0);
-  Call(f,"RefreshPhoneBatteryIndicators");var badge=Row(f,"a").Controls[1];Check(badge.AccessibleName=="17 percent battery, charging","Battery or charging status incorrect");
+  Call(f,"RefreshPhoneBatteryIndicators");var badge=Row(f,"a").Controls[1];Check(badge.AccessibleName=="0 camera FPS, 17 percent battery, charging","Battery or charging status incorrect");
   var rowIdentity=Row(f,"a");for(int i=0;i<5;i++)Call(f,"RefreshPhoneBatteryIndicators");Check(ReferenceEquals(rowIdentity,Row(f,"a")),"Telemetry rebuilt row during drag");
-  Check(Row(f,"web:c").Controls[1].AccessibleName=="Battery unavailable","Browser battery fabricated");
-  Directory.CreateDirectory("build");using(var image=new Bitmap(80,27)){badge.DrawToBitmap(image,new Rectangle(0,0,80,27));image.Save("build/phone-battery-charging.png");}
+  Check(Row(f,"web:c").Controls[1].AccessibleName=="0 camera FPS, battery unavailable","Browser battery fabricated");
+  // Claimed 120 FPS must never replace independently counted, unique compositions.
+  using(var frame=new Bitmap(16,9))for(int i=0;i<45;i++){
+   Call(f,"ProcessDeviceFrame","a",frame,17,true,25f,120,0);
+   if(i%2==0)Call(f,"ProcessDeviceFrame","b",frame,61,false,25f,120,0);
+   Call(f,"ComposeDevices");System.Threading.Thread.Sleep(33);
+  }
+  Call(f,"RefreshPhoneBatteryIndicators");
+  int aFps=(int)badge.GetType().GetProperty("CameraFps").GetValue(badge,null);
+  var second=Row(f,"b").Controls[1];int bFps=(int)second.GetType().GetProperty("CameraFps").GetValue(second,null);
+  Check(aFps>0&&aFps<=35&&bFps>0&&bFps<aFps,"Cards do not count independent displayed camera frames");
+  foreach(int width in new[]{180,260,400}){Call(f,"LayoutPhoneCards",width);Check(badge.Left>=Row(f,"a").Controls[0].Right,"FPS/battery overlaps phone name");Check(badge.Right<=width,"Camera status overflows its card");}
+  Call(f,"RefreshStudioStatus");Check(!((ToolStripStatusLabel)Get(f,"streamStatus")).Visible,"Duplicate top telemetry remains visible");
+  Directory.CreateDirectory("build");using(var image=new Bitmap(badge.Width,27)){badge.DrawToBitmap(image,new Rectangle(0,0,badge.Width,27));image.Save("build/phone-battery-charging.png");}
+  var cards=(Panel)Get(f,"phoneCards");using(var image=new Bitmap(cards.Width,cards.Height)){cards.DrawToBitmap(image,cards.ClientRectangle);image.Save("build/phone-cards-fps.png");}
+  System.Threading.Thread.Sleep(2100);Call(f,"RefreshPhoneBatteryIndicators");Check((int)badge.GetType().GetProperty("CameraFps").GetValue(badge,null)==0,"Stalled camera shows stale FPS");
   Call(f,"HandlePhoneDisconnected","a");Check(Row(f,"a").Controls[1].AccessibleName=="Phone offline","Offline status stale");
   Call(f,"HandlePhoneConnected",new PhoneDeviceInfo{Id="a",Name="Phone a",Host=""});Check(First(f)=="a","Reconnect changed priority");
   Call(f,"SaveWorkspace");Cleanup(f);

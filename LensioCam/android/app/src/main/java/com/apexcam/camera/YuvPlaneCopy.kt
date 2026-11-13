@@ -12,6 +12,7 @@ internal object YuvPlaneCopy {
         val src=source.duplicate();val dst=dest.duplicate()
         val start=src.position();val end=start.toLong()+(height-1L)*rowStride+span
         require(end<=src.limit()&&((height-1L)*destStride+width)<=dst.remaining())
+        if(NativeYuvPlane.copy(source,rowStride,pixelStride,dest,destStride,width,height))return
         val outStart=dst.position()
         for(row in 0 until height){
             src.position(start+row*rowStride);dst.position(outStart+row*destStride)

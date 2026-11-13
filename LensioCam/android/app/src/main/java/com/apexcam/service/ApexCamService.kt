@@ -238,6 +238,8 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         }
         httpStreamServer.cameraCatalogProvider = {
             val catalog=com.google.gson.JsonParser.parseString(cameraManager.cameraCatalogJson()).asJsonObject
+            catalog.addProperty("sentFps",nativeSender.currentFps)
+            catalog.addProperty("sentFrames",nativeSender.totalFramesSent)
             catalog.add("pcAudio",com.google.gson.Gson().toJsonTree(audioReceiverEngine?.diagnostics?:mapOf("running" to false)))
             catalog.toString()
         }

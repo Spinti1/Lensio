@@ -37,6 +37,10 @@ class CameraXManager(
     private var hardwarePreferred=false
     private val hardwareRecovery=HardwareRecoveryPolicy()
     @Volatile private var captureGeneration=0
+    private val sensorRate=FrameRateProbe()
+    @Volatile private var sensorLastAt=0L
+    @Volatile private var sensorExposureNs=0L
+    @Volatile private var sensorFrameDurationNs=0L
     @Volatile private var lastHardwareError=""
     private var lastHardwareBindAt=0L
     private val variableFpsCameras=mutableSetOf<String>()
@@ -124,6 +128,9 @@ class CameraXManager(
         "targetFpsRange" to activeFpsRange,
         "videoCodec" to if(hardwareRequested) "h264" else "jpeg",
         "hardwareInput" to if(preferYuvHardware) "yuv" else "texture",
+        "sensorFps" to if(System.nanoTime()-sensorLastAt>2_000_000_000L)0 else sensorRate.value(sensorLastAt),
+        "sensorExposureMs" to sensorExposureNs/1_000_000.0,
+        "sensorFrameDurationMs" to sensorFrameDurationNs/1_000_000.0,
         "exposureIndex" to effectiveExposureIndex,
         "encoder" to hardwareCapture?.diagnostics,
         "hardwareError" to lastHardwareError,
@@ -312,6 +319,7 @@ class CameraXManager(
 
     fun bindCamera(previewView: PreviewView? = currentPreviewView) {
         val generation=++captureGeneration
+        sensorRate.reset();sensorLastAt=0; sensorExposureNs=0;sensorFrameDurationNs=0
         if (previewView != null) {
             currentPreviewView = previewView
         }
@@ -423,9 +431,18 @@ class CameraXManager(
 
         val previewBuilder = Preview.Builder().setTargetRotation(targetRotation)
             .setResolutionSelector(resolutionSelector)
+        val captureStats=object:android.hardware.camera2.CameraCaptureSession.CaptureCallback(){
+            override fun onCaptureCompleted(session:android.hardware.camera2.CameraCaptureSession,request:CaptureRequest,result:android.hardware.camera2.TotalCaptureResult){
+                if(generation!=captureGeneration||released)return
+                val now=System.nanoTime();sensorLastAt=now;sensorRate.record(now)
+                sensorExposureNs=result.get(android.hardware.camera2.CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
+                sensorFrameDurationNs=result.get(android.hardware.camera2.CaptureResult.SENSOR_FRAME_DURATION) ?: 0L
+            }
+        }
         if(hardwareRequested)targetFpsRange?.let { previewBuilder.setTargetFrameRate(it) }
         try {
             Camera2Interop.Extender(previewBuilder)
+                .setSessionCaptureCallback(captureStats)
                 .apply { targetFpsRange?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) } }
                 .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                 .apply { focusMode?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, it) } }
@@ -467,6 +484,7 @@ class CameraXManager(
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
         try {
             Camera2Interop.Extender(analysisBuilder)
+                .setSessionCaptureCallback(captureStats)
                 .apply { targetFpsRange?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) } }
                 .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                 .apply { focusMode?.let { setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, it) } }

@@ -30,6 +30,7 @@ namespace ApexCam
         public int BoundPort {get; private set;}
         public string ActiveDeviceId { get {lock(gate)return activeId;} set {lock(gate)activeId=value;} }
         public string DeviceCodec(string id){lock(gate){Entry e;return id!=null&&devices.TryGetValue(id,out e)?e.Core.ActiveCodec:"JPEG";}}
+        public int DeviceReceivedFps(string id){lock(gate){Entry e;return id!=null&&devices.TryGetValue(id,out e)?e.Core.ReceivedFps:0;}}
         public int CurrentFps {get {lock(gate){Entry e; return activeId!=null && devices.TryGetValue(activeId,out e)?e.Core.CurrentFps:0;}}}
         public bool IsConnected {get {lock(gate)return devices.Count>0;}}
         public event Action<PhoneDeviceInfo> OnDeviceConnected;

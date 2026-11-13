@@ -17,6 +17,8 @@ namespace ApexCam
             public bool? Portrait;
             public float Temperature;
             public bool Charging;
+            public readonly ActualFrameRate DecodedRate=new ActualFrameRate(),RenderedRate=new ActualFrameRate();
+            public long RenderedRevision=-1;
         }
         private readonly object devicesGate=new object();
         private readonly Dictionary<string,PhoneSlot> phoneSlots=new Dictionary<string,PhoneSlot>();
@@ -94,7 +96,7 @@ namespace ApexCam
         }
         private void HandlePhoneDisconnected(string id)
         {
-            lock(devicesGate) {PhoneSlot slot;if(phoneSlots.TryGetValue(id,out slot)){slot.Connected=false;slot.Battery=-1;slot.Charging=false;slot.Layer.SetCameraFrame(null);}}
+            lock(devicesGate) {PhoneSlot slot;if(phoneSlots.TryGetValue(id,out slot)){slot.Connected=false;slot.Battery=-1;slot.Charging=false;slot.Layer.SetCameraFrame(null);slot.DecodedRate.Reset();slot.RenderedRate.Reset();slot.RenderedRevision=-1;}}
             if(controlledDeviceId==id) {
                 connectedPhoneHost=null;cameraCatalogGeneration++;
                 cameraPicker.Text="Phone disconnected";
@@ -184,7 +186,6 @@ namespace ApexCam
                     "Drag to reorder cameras: top is in front. Click to select. Right-click for properties and controls.");
                 row.Controls.Add(name);
                 var battery=new PhoneBatteryIndicator {Name="PhoneBattery",BackColor=ColorHeaderBg,ForeColor=ColorTextPrimary,Font=name.Font,Tag=slot.Info.Id};
-                battery.Visible=!IsLocalCamera(slot.Info.Id);
                 row.Controls.Add(battery);BindCameraDrop(battery,slot.Info.Id);
                 var menu=new ContextMenuStrip();
                 var mainItem=new ToolStripMenuItem("Use as main camera") {Checked=mainDeviceId==slot.Info.Id,Enabled=slot.Connected};
@@ -223,27 +224,36 @@ namespace ApexCam
             public int Level {get;private set;}
             public bool Charging {get;private set;}
             public bool Connected {get;private set;}
+            public int CameraFps {get;private set;}
+            public bool HasBattery {get;private set;}
             public PhoneBatteryIndicator(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);Level=-2;AccessibleRole=AccessibleRole.StaticText;}
-            public bool UpdateStatus(int level,bool charging,bool connected){
+            public bool UpdateStatus(int level,bool charging,bool connected,int fps,bool hasBattery){
                 level=level<0?-1:Math.Min(100,level);
-                if(Level==level&&Charging==charging&&Connected==connected)return false;
-                Level=level;Charging=charging;Connected=connected;
-                AccessibleName=!connected?"Phone offline":level<0?"Battery unavailable":level+" percent battery"+(charging?", charging":"");
+                fps=Math.Max(0,fps);
+                if(Level==level&&Charging==charging&&Connected==connected&&CameraFps==fps&&HasBattery==hasBattery)return false;
+                Level=level;Charging=charging;Connected=connected;CameraFps=fps;HasBattery=hasBattery;
+                AccessibleName=!connected?"Phone offline":fps+" camera FPS"+(hasBattery?", "+(level<0?"battery unavailable":level+" percent battery"+(charging?", charging":"")):"");
                 Invalidate();return true;
             }
             protected override void OnPaint(PaintEventArgs e){
                 var g=e.Graphics;g.Clear(BackColor);g.SmoothingMode=SmoothingMode.AntiAlias;
+                var textFlags=TextFormatFlags.VerticalCenter|TextFormatFlags.Right|TextFormatFlags.NoPadding;
+                if(!Connected){TextRenderer.DrawText(g,"Offline",Font,ClientRectangle,ColorTextSecondary,textFlags);return;}
+                int fpsWidth=TextRenderer.MeasureText(g,"30 FPS",Font,Size.Empty,TextFormatFlags.NoPadding).Width+8;
+                TextRenderer.DrawText(g,CameraFps+" FPS",Font,new Rectangle(0,0,HasBattery?fpsWidth:Width,Height),ForeColor,textFlags);
+                if(!HasBattery)return;
+                int offset=fpsWidth+4;
                 Color color=!Connected||Level<0?ColorTextSecondary:Level<=15?ColorAccentRed:Level<=30?ColorAccentAmber:ColorAccentEmerald;
                 int y=(Height-12)/2;
                 using(var outline=new Pen(color,1.3f))using(var fill=new SolidBrush(color)){
-                    g.DrawRectangle(outline,3,y,21,12);g.FillRectangle(fill,25,y+4,2,4);
-                    if(Connected&&Level>=0)g.FillRectangle(fill,5,y+2,17*Level/100f,8);
+                    g.DrawRectangle(outline,offset+3,y,21,12);g.FillRectangle(fill,offset+25,y+4,2,4);
+                    if(Connected&&Level>=0)g.FillRectangle(fill,offset+5,y+2,17*Level/100f,8);
                 }
                 if(Connected&&Charging)using(var bolt=new SolidBrush(Color.White))using(var shadow=new Pen(ColorHeaderBg,2)){
-                    var points=new[]{new Point(16,y-2),new Point(9,y+7),new Point(14,y+7),new Point(11,y+15),new Point(20,y+4),new Point(15,y+4)};
+                    var points=new[]{new Point(offset+16,y-2),new Point(offset+9,y+7),new Point(offset+14,y+7),new Point(offset+11,y+15),new Point(offset+20,y+4),new Point(offset+15,y+4)};
                     g.DrawPolygon(shadow,points);g.FillPolygon(bolt,points);
                 }
-                TextRenderer.DrawText(g,!Connected?"Offline":Level<0?"N/A":Level+"%",Font,new Rectangle(31,0,Math.Max(1,Width-31),Height),Connected?ForeColor:ColorTextSecondary,TextFormatFlags.VerticalCenter|TextFormatFlags.Right|TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(g,Level<0?"N/A":Level+"%",Font,new Rectangle(offset+31,0,Math.Max(1,Width-offset-31),Height),ForeColor,textFlags);
             }
         }
         private void RefreshPhoneBatteryIndicators(){
@@ -251,10 +261,13 @@ namespace ApexCam
             foreach(Control row in phoneCards.Controls){
                 if(row.Controls.Count<2)continue;
                 var indicator=row.Controls[1] as PhoneBatteryIndicator;if(indicator==null||!indicator.Visible)continue;
-                int level;bool charging,connected;PhoneSlot slot;
-                lock(devicesGate){if(!phoneSlots.TryGetValue((string)row.Tag,out slot))continue;level=slot.Battery;charging=slot.Charging;connected=slot.Connected;}
+                int level,fps,decoded;bool charging,connected;PhoneSlot slot;
+                lock(devicesGate){if(!phoneSlots.TryGetValue((string)row.Tag,out slot))continue;level=slot.Battery;charging=slot.Charging;connected=slot.Connected;fps=connected&&slot.Layer.Visible?slot.RenderedRate.Value:0;decoded=slot.DecodedRate.Value;}
                 if(slot.Info.Id.StartsWith("web:"))level=-1; // Safari does not expose device battery telemetry.
-                if(indicator.UpdateStatus(level,charging,connected))sourceToolTips.SetToolTip(indicator,indicator.AccessibleName);
+                indicator.UpdateStatus(level,charging,connected,fps,!IsLocalCamera(slot.Info.Id));
+                int received=connected&&receiver!=null&&!IsLocalCamera(slot.Info.Id)?receiver.DeviceReceivedFps(slot.Info.Id):0;
+                string details=indicator.AccessibleName+(connected?"\n"+(!IsLocalCamera(slot.Info.Id)?"Received: "+received+" FPS. ":"")+"Decoded: "+decoded+" FPS. Displayed: "+fps+" FPS. Counts new camera frames only.":"");
+                if(sourceToolTips.GetToolTip(indicator)!=details)sourceToolTips.SetToolTip(indicator,details);
             }
         }
         private sealed class CameraOrderDrag {public MainForm Owner;public string Id;}
@@ -315,7 +328,9 @@ namespace ApexCam
             phoneCards.SetBounds(4,167,width,count*32);
             foreach(Control row in phoneCards.Controls) {
                 row.Width=width;
-                int badge=row.Controls.Count>1 && !IsLocalCamera((string)row.Tag)?80:0;
+                int fpsWidth=TextRenderer.MeasureText("30 FPS",row.Controls[0].Font,Size.Empty,TextFormatFlags.NoPadding).Width+8;
+                int batteryWidth=TextRenderer.MeasureText("100%",row.Controls[0].Font,Size.Empty,TextFormatFlags.NoPadding).Width+40;
+                int badge=row.Controls.Count>1?fpsWidth+(IsLocalCamera((string)row.Tag)?0:batteryWidth):0;
                 row.Controls[0].SetBounds(0,1,Math.Max(40,width-badge-4),27);
                 if(row.Controls.Count>1)row.Controls[1].SetBounds(width-badge,1,badge,27);
             }
@@ -343,7 +358,7 @@ namespace ApexCam
                 }
                 slot.Layer.SetCameraFrame(filtered);
             }
-            lock(devicesGate){slot.Battery=battery;slot.Fps=fps;slot.Temperature=temp;slot.Charging=charging;}
+            lock(devicesGate){slot.Battery=battery;slot.Fps=fps;slot.Temperature=temp;slot.Charging=charging;slot.DecodedRate.Tick();}
             if(id==mainDeviceId){batteryPercent=battery;phoneFps=fps;deviceTemp=temp;isPhoneCharging=charging;latencyMs=rtt;}
         }
         private void ComposeDevices()
@@ -362,6 +377,11 @@ namespace ApexCam
                 if(isVirtualCamActive && vcamBridge!=null)vcamBridge.WriteFrame(image);
                 sceneFrameRate.Tick();
                 lock(devicesGate){
+                    foreach(var slot in phoneSlots.Values){
+                        if(!slot.Connected||!slot.Layer.Visible)continue;
+                        long revision=slot.Layer.RenderedRevision;
+                        if(revision>=0&&revision!=slot.RenderedRevision){slot.RenderedRevision=revision;slot.RenderedRate.Tick();}
+                    }
                     if(measuredMainId!=mainDeviceId){measuredMainId=mainDeviceId;measuredMainRevision=-1;cameraFrameRate.Reset();}
                     PhoneSlot main;
                     if(mainDeviceId!=null&&phoneSlots.TryGetValue(mainDeviceId,out main)&&main.Connected&&main.Layer.Visible){

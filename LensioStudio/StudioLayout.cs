@@ -108,7 +108,7 @@ namespace ApexCam
                 BackColor = ColorHeaderBg, ForeColor = ColorTextSecondary,
                 SizingGrip = false, Renderer = new StudioMenuRenderer()
             };
-            streamStatus = new ToolStripStatusLabel { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+            streamStatus = new ToolStripStatusLabel { Spring = true, TextAlign = ContentAlignment.MiddleLeft,Visible=false };
             var panels = new ToolStripDropDownButton("Panels");
             panels.DropDownItems.Add("Sources", null, (s,e) => lbSources.Focus());
             panels.DropDownItems.Add("Filters", null, (s,e) => cbPresets.Focus());
@@ -393,15 +393,7 @@ namespace ApexCam
         private void RefreshStudioStatus()
         {
             if (streamStatus == null) return;
-            if(IsLocalCamera(mainDeviceId)){streamStatus.Text=string.Format("Camera {0} FPS | Scene {1} FPS | {2}x{3} | Webcam",cameraFrameRate.Value,sceneFrameRate.Value,currentResWidth,currentResHeight);return;}
-            if(isConnected && mainDeviceId!=null && mainDeviceId.StartsWith("web:")) {
-                streamStatus.Text=string.Format("Camera {0} FPS | Scene {1} FPS | {2}x{3} | Web",cameraFrameRate.Value,sceneFrameRate.Value,currentResWidth,currentResHeight);return;
-            }
-            streamStatus.Text = isConnected
-                ? string.Format("Camera {0} FPS | Scene {1} FPS | {2}x{3} | Battery {4}%",
-                    cameraFrameRate.Value,sceneFrameRate.Value,currentResWidth,currentResHeight,batteryPercent)
-                : "Waiting for LensioCam | Wi-Fi / USB";
-            if(isConnected&&receiver!=null)streamStatus.Text+=" | "+receiver.DeviceCodec(mainDeviceId);
+            streamStatus.Visible=false;
         }
     }
 }

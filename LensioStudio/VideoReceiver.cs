@@ -43,6 +43,8 @@ namespace ApexCam
         public volatile string ActiveCodec="JPEG";
         private int framesCount = 0;
         private DateTime lastFpsCalc = DateTime.UtcNow;
+        private long lastPacketAt;
+        public int ReceivedFps {get{return System.Diagnostics.Stopwatch.GetTimestamp()-Interlocked.Read(ref lastPacketAt)>2*System.Diagnostics.Stopwatch.Frequency?0:CurrentFps;}}
         public int CurrentFps { get; private set; }
         public long TotalBytesReceived { get; private set; }
 
@@ -188,12 +190,13 @@ namespace ApexCam
 
                     TotalBytesReceived += payloadLength;
                     framesCount++;
+                    Interlocked.Exchange(ref lastPacketAt,System.Diagnostics.Stopwatch.GetTimestamp());
 
                     // FPS calculation
                     DateTime now = DateTime.UtcNow;
                     if ((now - lastFpsCalc).TotalMilliseconds >= 1000)
                     {
-                        CurrentFps = framesCount;
+                        CurrentFps = (int)Math.Round(framesCount/(now-lastFpsCalc).TotalSeconds);
                         try
                         {
                             File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.log"), string.Format("{0} - [FrameStats] Phone: "+DeviceLabel+" Res: {1}x{2}, Size: {3:0.0}KB, PhoneFps: {4}, PcFps: {5}, Battery: {6}, Temp: {7:0.0}C, Codec: {8}\n",

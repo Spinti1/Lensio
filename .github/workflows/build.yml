@@ -67,6 +67,17 @@ jobs:
         run: |
           chmod +x LensioCam/android/gradlew
           LensioCam/android/gradlew -p LensioCam/android --no-daemon testDebugUnitTest assembleDebug lintDebug
+      - name: Test exact native YUV copies
+        run: |
+          cmake -S tests/native-yuv -B build/yuv-tests -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/yuv-tests
+          ctest --test-dir build/yuv-tests --output-on-failure
+          KOTLIN_CP="LensioCam/android/app/build/tmp/kotlin-classes/debug"
+          for jar in "$HOME"/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/*/*/kotlin-stdlib-*.jar; do
+            KOTLIN_CP="$KOTLIN_CP:$jar"
+          done
+          javac -cp "$KOTLIN_CP" -d build/yuv-tests tests/NativeYuvJniSmoke.java
+          java -Djava.library.path=build/yuv-tests -cp "$KOTLIN_CP:build/yuv-tests" NativeYuvJniSmoke
       - uses: actions/upload-artifact@v4
         with:
           name: LensioCam-ci-build-not-for-updates

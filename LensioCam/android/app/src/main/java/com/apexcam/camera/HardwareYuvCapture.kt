@@ -35,11 +35,15 @@ internal class HardwareYuvCapture(
     @Volatile private var inputFrames=0L
     @Volatile private var outputFrames=0L
     @Volatile private var drops=0L
+    @Volatile private var poolDrops=0L
+    @Volatile private var copyUs=0L
+    private val inputRate=FrameRateProbe()
+    private val encodedRate=FrameRateProbe()
     @Volatile private var hasOutput=false
     @Volatile private var lastOutputAt=SystemClock.elapsedRealtime()
     override val outputStalled:Boolean get()=SystemClock.elapsedRealtime()-lastOutputAt>=if(hasOutput)6000 else 10000
     override val outputHealthy:Boolean get()=hasOutput&&!closed.get()&&SystemClock.elapsedRealtime()-lastOutputAt<2000
-    override val diagnostics:String get()="input=yuv inputs=$inputFrames outputs=$outputFrames output=$hasOutput queuedDrops=$drops idleMs=${SystemClock.elapsedRealtime()-lastOutputAt}"
+    override val diagnostics:String get(){val now=System.nanoTime();return "input=yuv copy=${if(NativeYuvPlane.available)"native" else "kotlin"} inputs=$inputFrames outputs=$outputFrames output=$hasOutput analysisFps=${inputRate.value(now)} encodedFps=${encodedRate.value(now)} queuedDrops=$drops poolDrops=$poolDrops copyUs=$copyUs idleMs=${SystemClock.elapsedRealtime()-lastOutputAt}"}
 
     /** Always closes the camera image before invoking any downstream consumer. */
     fun accept(image:ImageProxy){
@@ -48,8 +52,11 @@ internal class HardwareYuvCapture(
         try{
             if(closed.get())return
             onFrame();inputFrames++
+            val started=System.nanoTime();inputRate.record(started)
             pending.take()?.let{drops++;it.release()}
             copy=pool.copy(image)
+            copyUs=(System.nanoTime()-started)/1000
+            if(copy==null)poolDrops++
         }catch(error:Exception){fail(error.message?:"YUV camera copy failed")}
         finally{image.close()}
         val owned=copy ?: return
@@ -81,6 +88,7 @@ internal class HardwareYuvCapture(
         val status=active.initEncode(settings){image,_->
             if(!closed.get()){
                 lastOutputAt=SystemClock.elapsedRealtime();hasOutput=true;outputFrames++
+                encodedRate.record(System.nanoTime())
                 val bytes=ByteArray(image.buffer.remaining());image.buffer.duplicate().get(bytes)
                 onEncoded(bytes,image.encodedWidth,image.encodedHeight,image.rotation,
                     image.frameType==EncodedImage.FrameType.VideoFrameKey,image.captureTimeNs/100)

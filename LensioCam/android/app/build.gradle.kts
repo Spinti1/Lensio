@@ -7,13 +7,16 @@ plugins {
 android {
     namespace = "com.apexcam"
     compileSdk = 34
+    ndkVersion = "27.3.13750724"
+    externalNativeBuild { ndkBuild { path = file("src/main/jni/Android.mk") } }
 
     defaultConfig {
         applicationId = "com.apexcam"
         minSdk = 26
         targetSdk = 34
-        versionCode = 52
-        versionName = "2.11.11"
+        versionCode = 53
+        versionName = "2.11.12"
+        externalNativeBuild { ndkBuild { arguments += listOf("APP_SUPPORT_FLEXIBLE_PAGE_SIZES=true") } }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

@@ -173,7 +173,7 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         lastUpdateCheckTime=now
         updateCheckJob=lifecycleScope.launch {
             try {
-                val info=UpdateChecker.checkUpdate(force)
+                val info=UpdateChecker.checkUpdate(this@ApexCamService,force)
                 availableUpdate.value=info
                 if(manual && info==null)Toast.makeText(this@ApexCamService,"LensioCam is up to date",Toast.LENGTH_SHORT).show()
             } catch (error: Exception) {
@@ -183,20 +183,6 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
         }
     }
 
-    private fun startUpdateDownload() {
-        if(isDownloadingUpdate.value)return
-        isDownloadingUpdate.value = true
-        downloadProgress.value = 0f
-        lifecycleScope.launch {
-            try {
-                UpdateChecker.downloadAndInstallApk(
-                    context = this@ApexCamService,
-                    onProgress = { p -> downloadProgress.value = p },
-                    onError = { err -> Toast.makeText(this@ApexCamService, "Update error: $err", Toast.LENGTH_LONG).show() }
-                )
-            } finally { isDownloadingUpdate.value = false }
-        }
-    }
 
 
     override fun onCreate() {
@@ -322,7 +308,6 @@ class ApexCamService : Service(), LifecycleOwner, SignalingClient.SignalingListe
 
     }
     fun checkUpdateNow() { checkForUpdates(force = true, manual = true) }
-    fun installAvailableUpdate() { startUpdateDownload() }
     fun startPcAudio(targetHost: String) {
         if (audioReceiverEngine == null || !audioReceiverEngine!!.active || audioReceiverHost!=targetHost) {
             audioReceiverEngine?.stop()

@@ -14,8 +14,8 @@ android {
         applicationId = "com.apexcam"
         minSdk = 26
         targetSdk = 34
-        versionCode = 53
-        versionName = "2.11.12"
+        versionCode = 54
+        versionName = "2.11.13"
         externalNativeBuild { ndkBuild { arguments += listOf("APP_SUPPORT_FLEXIBLE_PAGE_SIZES=true") } }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

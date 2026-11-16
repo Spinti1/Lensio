@@ -9,4 +9,6 @@ The script creates a draft, uploads the two specified artifacts, dependency noti
 
 The initial APK follows the existing local development-signing lineage so current installations can update. Public CI deliberately does not publish its separately signed debug APK. Keep the original signing key private and backed up; changing it breaks in-place Android updates.
 
+Android compares release offers against PackageManager's installed version. Before opening the system installer it verifies the APK's exact release size and SHA-256, package name, release versionName, increasing versionCode and matching signing certificate. Installation runs from the visible activity with a result callback; returning from the unknown-sources permission screen continues installation using the verified cached APK. Opening the installer is never treated as installation success. Cancelling permits a retry without another download.
+
 For the first public snapshot, the old private repository and Git history are intentionally not migrated. Commits use a GitHub noreply address. Do not copy application logs, screenshots of live cameras, workspace files, build caches or AI conversation prompts into future commits.

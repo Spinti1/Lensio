@@ -1,10 +1,9 @@
 package com.apexcam.network
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.util.Log
-import androidx.core.content.FileProvider
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import com.apexcam.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,7 +22,6 @@ data class VersionInfo(
 )
 
 object UpdateChecker {
-    private const val TAG = "UpdateChecker"
     private val client = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -33,16 +31,22 @@ object UpdateChecker {
     private const val REPOSITORY = "Spinti1/Lensio"
     private var offeredUpdate: VersionInfo? = null
     private var lastGitHubCheck=0L
-    internal fun parseGitHubRelease(json: String): VersionInfo? {
+    internal fun isNewerVersion(candidate: String, installed: String): Boolean {
+        fun parts(value: String): List<Int>? {
+            if (!value.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) return null
+            return value.split('.').map { it.toIntOrNull() ?: return null }
+        }
+        val next = parts(candidate) ?: return false
+        val current = parts(installed) ?: return false
+        for (i in 0..2) if (next[i] != current[i]) return next[i] > current[i]
+        return false
+    }
+
+    internal fun parseGitHubRelease(json: String, installedVersion: String = BuildConfig.VERSION_NAME): VersionInfo? {
         val release = com.google.gson.JsonParser.parseString(json).asJsonObject
         if (release.get("draft")?.asBoolean == true || release.get("prerelease")?.asBoolean == true) return null
         val version = release.get("tag_name").asString.removePrefix("v")
-        val parts = version.split('.').map { it.toIntOrNull() ?: return null }
-        if (parts.size != 3 || parts.any { it < 0 } || !version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) return null
-        val current = BuildConfig.VERSION_NAME.split('.').map { it.toIntOrNull() ?: 0 }
-        var newer = false
-        for (i in 0..2) { val compare = parts[i].compareTo(current.getOrElse(i) {0}); if (compare != 0) { newer=compare>0; break } }
-        if (!newer) return null
+        if (!isNewerVersion(version, installedVersion)) return null
         val asset = release.getAsJsonArray("assets").map { it.asJsonObject }.firstOrNull { it.get("name").asString == "LensioCam.apk" } ?: return null
         val url=asset.get("browser_download_url").asString
         val digest=asset.get("digest")?.asString ?: return null
@@ -51,10 +55,13 @@ object UpdateChecker {
             !digest.matches(Regex("sha256:[0-9a-fA-F]{64}")) || size !in 1..200*1024*1024L) return null
         return VersionInfo(version,size,url,release.get("body")?.asString ?: "",digest.removePrefix("sha256:"))
     }
-    suspend fun checkUpdate(forceGitHub: Boolean = false): VersionInfo? = withContext(Dispatchers.IO) {
+    suspend fun checkUpdate(context: Context, forceGitHub: Boolean = false): VersionInfo? = withContext(Dispatchers.IO) {
+        val installed = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+        // Reconcile even a cached offer against Android's installed package, not UI/process state.
+        offeredUpdate = offeredUpdate?.takeIf { isNewerVersion(it.versionName, installed) }
         val now=android.os.SystemClock.elapsedRealtime()
         if (!forceGitHub && lastGitHubCheck!=0L && now-lastGitHubCheck<15*60*1000L) return@withContext offeredUpdate
-        val request=Request.Builder().url("https://api.github.com/repos/$REPOSITORY/releases/latest").header("User-Agent","LensioCam").build()
+        val request=Request.Builder().url("https://api.github.com/repos/$REPOSITORY/releases/latest").header("User-Agent","LensioCam").header("Cache-Control","no-cache").build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw java.io.IOException("GitHub update check failed (${response.code})")
             val body=response.body ?: throw java.io.IOException("Empty GitHub response")
@@ -64,34 +71,44 @@ object UpdateChecker {
                 while(true){val count=reader.read(buffer);if(count<0)break;if(text.length+count>1024*1024)throw java.io.IOException("Release metadata is too large");text.append(buffer,0,count)}
                 text.toString()
             }
-            offeredUpdate=parseGitHubRelease(json)
+            offeredUpdate=parseGitHubRelease(json, installed)
             lastGitHubCheck=now
             offeredUpdate
         }
     }
 
-    suspend fun downloadAndInstallApk(
+    suspend fun prepareUpdate(
         context: Context,
-        onProgress: (Float) -> Unit,
-        onError: (String) -> Unit
-    ) = withContext(Dispatchers.IO) {
-        val targetFile = File(context.cacheDir, "LensioCam_Update.apk")
+        onProgress: (Float) -> Unit
+    ): File = withContext(Dispatchers.IO) {
+        val offer=offeredUpdate ?: checkUpdate(context, true)
+            ?: throw java.io.IOException("LensioCam is already up to date")
+        if(offer.apkUrl != "https://github.com/$REPOSITORY/releases/download/v${offer.versionName}/LensioCam.apk" ||
+            !offer.sha256.matches(Regex("[0-9a-fA-F]{64}")) || offer.apkSize !in 1..200*1024*1024L) throw java.io.IOException("Unverified update offer")
+        val directory=File(context.cacheDir,"updates").apply { mkdirs() }
+        val targetFile=File(directory,"LensioCam-${offer.versionName}.apk")
         try {
-            val offer=offeredUpdate ?: throw java.io.IOException("Check GitHub for updates first")
-            if(!offer.apkUrl.startsWith("https://github.com/$REPOSITORY/releases/download/") ||
-                !offer.sha256.matches(Regex("[0-9a-fA-F]{64}")) || offer.apkSize !in 1..200*1024*1024L) throw java.io.IOException("Unverified update offer")
+            // Returning from Settings or a cancelled installer must not download the APK again.
+            if(targetFile.isFile) {
+                val verified=try {
+                    val discard=object: java.io.OutputStream() {
+                        override fun write(value: Int) {}
+                        override fun write(buffer: ByteArray, offset: Int, length: Int) {}
+                    }
+                    targetFile.inputStream().use { copyVerifiedApk(it,discard,offer.apkSize,offer.sha256) }
+                    true
+                } catch(_: java.io.IOException) { false }
+                if(verified) { validateArchive(context,targetFile,offer); return@withContext targetFile }
+                targetFile.delete()
+            }
             val downloadUrl=offer.apkUrl
             val request = Request.Builder().url(downloadUrl).build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    withContext(Dispatchers.Main) { onError("Server error: ${response.code}") }
-                    return@withContext
+                    throw java.io.IOException("Download failed (${response.code})")
                 }
 
-                val body = response.body ?: run {
-                    withContext(Dispatchers.Main) { onError("Empty server response") }
-                    return@withContext
-                }
+                val body = response.body ?: throw java.io.IOException("Empty download response")
 
                 val contentLength = body.contentLength()
                 if (contentLength>=0 && contentLength!=offer.apkSize) throw java.io.IOException("Update size does not match the release")
@@ -104,22 +121,37 @@ object UpdateChecker {
                         }
                     }
                 }
-                // Android also verifies the package signature before allowing an update.
-                val archive=context.packageManager.getPackageArchiveInfo(targetFile.absolutePath,0)
-                if (archive?.packageName!=context.packageName) {targetFile.delete();throw java.io.IOException("Unexpected update package")}
-                withContext(Dispatchers.Main) {
-                    onProgress(1.0f)
-                    installApk(context, targetFile)
-                }
             }
+            validateArchive(context,targetFile,offer)
+            targetFile
         } catch (e: Exception) {
             targetFile.delete()
-            if(e is kotlinx.coroutines.CancellationException)throw e
-            Log.e(TAG, "Update download failed: ${e.message}", e)
-            withContext(Dispatchers.Main) {
-                onError("Connection error: ${e.message}")
-            }
+            throw e
         }
+    }
+
+    @Suppress("DEPRECATION")
+    internal fun validateArchive(context: Context, file: File, offer: VersionInfo) {
+        val flags=if(Build.VERSION.SDK_INT>=28)PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val installed=context.packageManager.getPackageInfo(context.packageName,flags)
+        val archive=context.packageManager.getPackageArchiveInfo(file.absolutePath,flags)
+            ?: throw java.io.IOException("Invalid update APK")
+        fun code(info: PackageInfo)=if(Build.VERSION.SDK_INT>=28)info.longVersionCode else info.versionCode.toLong()
+        validatePackageVersion(context.packageName,installed.versionName ?: "",code(installed),
+            archive.packageName,archive.versionName ?: "",code(archive),offer.versionName)
+        fun signers(info: PackageInfo)=
+            (if(Build.VERSION.SDK_INT>=28)info.signingInfo?.apkContentsSigners else info.signatures)
+                ?.map { it.toCharsString() }?.toSet().orEmpty()
+        if(signers(installed).isEmpty() || signers(installed)!=signers(archive))
+            throw java.io.IOException("Update signing certificate does not match LensioCam")
+    }
+
+    internal fun validatePackageVersion(installedPackage: String, installedName: String, installedCode: Long,
+        archivePackage: String, archiveName: String, archiveCode: Long, releaseName: String) {
+        if(archivePackage!=installedPackage)throw java.io.IOException("Unexpected update package")
+        if(archiveName!=releaseName)throw java.io.IOException("APK version does not match the GitHub release")
+        if(!isNewerVersion(archiveName,installedName) || archiveCode<=installedCode)
+            throw java.io.IOException("This APK is not newer than the installed LensioCam")
     }
 
     internal suspend fun copyVerifiedApk(
@@ -128,41 +160,17 @@ object UpdateChecker {
     ) {
         require(expectedSize in 1..200*1024*1024L && expectedHash.matches(Regex("[0-9a-fA-F]{64}")))
         val digest=java.security.MessageDigest.getInstance("SHA-256")
-        val buffer=ByteArray(32768);var total=0L
+        val buffer=ByteArray(32768);var total=0L;var reportedPercent=-1
         while(true){
             val count=input.read(buffer);if(count<0)break
             total+=count
             if(total>expectedSize)throw java.io.IOException("Update exceeds release size")
             digest.update(buffer,0,count);output.write(buffer,0,count)
-            onProgress(total.toFloat()/expectedSize)
+            val percent=(total*100/expectedSize).toInt()
+            if(percent!=reportedPercent){reportedPercent=percent;onProgress(total.toFloat()/expectedSize)}
         }
         val hash=digest.digest().joinToString("") { "%02x".format(it) }
         if(total!=expectedSize || !hash.equals(expectedHash,true))throw java.io.IOException("Update integrity verification failed")
     }
 
-    private fun installApk(context: Context, apkFile: File) {
-        try {
-            if(android.os.Build.VERSION.SDK_INT>=26 && !context.packageManager.canRequestPackageInstalls()) {
-                context.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                android.widget.Toast.makeText(context,"Allow updates from LensioCam, then tap Install update again",android.widget.Toast.LENGTH_LONG).show()
-                return
-            }
-            val uri: Uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.provider",
-                apkFile
-            )
-
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-
-            context.startActivity(installIntent)
-            Log.i(TAG, "Intent instalare lansat cu succes pentru: ${apkFile.absolutePath}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Unable to open installer: ${e.message}", e)
-            throw e
-        }
-    }
 }

@@ -25,12 +25,16 @@ object UpdateChecker {
     private val client = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(2, TimeUnit.MINUTES)
         .followSslRedirects(false)
         .build()
 
     private const val REPOSITORY = "Spinti1/Lensio"
     private var offeredUpdate: VersionInfo? = null
     private var lastGitHubCheck=0L
+    internal fun trustedApkUrl(version: String): String? =
+        if (version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+")))
+            "https://github.com/$REPOSITORY/releases/download/v$version/LensioCam.apk" else null
     internal fun isNewerVersion(candidate: String, installed: String): Boolean {
         fun parts(value: String): List<Int>? {
             if (!value.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) return null
@@ -51,7 +55,7 @@ object UpdateChecker {
         val url=asset.get("browser_download_url").asString
         val digest=asset.get("digest")?.asString ?: return null
         val size=asset.get("size").asLong
-        if (url != "https://github.com/$REPOSITORY/releases/download/v$version/LensioCam.apk" ||
+        if (url != trustedApkUrl(version) ||
             !digest.matches(Regex("sha256:[0-9a-fA-F]{64}")) || size !in 1..200*1024*1024L) return null
         return VersionInfo(version,size,url,release.get("body")?.asString ?: "",digest.removePrefix("sha256:"))
     }
@@ -79,17 +83,19 @@ object UpdateChecker {
 
     suspend fun prepareUpdate(
         context: Context,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
+        onStage: (String) -> Unit = {}
     ): File = withContext(Dispatchers.IO) {
         val offer=offeredUpdate ?: checkUpdate(context, true)
             ?: throw java.io.IOException("LensioCam is already up to date")
-        if(offer.apkUrl != "https://github.com/$REPOSITORY/releases/download/v${offer.versionName}/LensioCam.apk" ||
+        if(offer.apkUrl != trustedApkUrl(offer.versionName) ||
             !offer.sha256.matches(Regex("[0-9a-fA-F]{64}")) || offer.apkSize !in 1..200*1024*1024L) throw java.io.IOException("Unverified update offer")
         val directory=File(context.cacheDir,"updates").apply { mkdirs() }
         val targetFile=File(directory,"LensioCam-${offer.versionName}.apk")
         try {
             // Returning from Settings or a cancelled installer must not download the APK again.
             if(targetFile.isFile) {
+                withContext(Dispatchers.Main) { onStage("Verifying update…") }
                 val verified=try {
                     val discard=object: java.io.OutputStream() {
                         override fun write(value: Int) {}
@@ -101,6 +107,7 @@ object UpdateChecker {
                 if(verified) { validateArchive(context,targetFile,offer); return@withContext targetFile }
                 targetFile.delete()
             }
+            withContext(Dispatchers.Main) { onStage("Downloading update…") }
             val downloadUrl=offer.apkUrl
             val request = Request.Builder().url(downloadUrl).build()
             client.newCall(request).execute().use { response ->
@@ -122,6 +129,7 @@ object UpdateChecker {
                     }
                 }
             }
+            withContext(Dispatchers.Main) { onStage("Verifying update…") }
             validateArchive(context,targetFile,offer)
             targetFile
         } catch (e: Exception) {
@@ -166,11 +174,12 @@ object UpdateChecker {
             total+=count
             if(total>expectedSize)throw java.io.IOException("Update exceeds release size")
             digest.update(buffer,0,count);output.write(buffer,0,count)
-            val percent=(total*100/expectedSize).toInt()
-            if(percent!=reportedPercent){reportedPercent=percent;onProgress(total.toFloat()/expectedSize)}
+            val percent=(total*99/expectedSize).toInt()
+            if(percent!=reportedPercent){reportedPercent=percent;onProgress((total.toFloat()/expectedSize).coerceAtMost(0.99f))}
         }
         val hash=digest.digest().joinToString("") { "%02x".format(it) }
         if(total!=expectedSize || !hash.equals(expectedHash,true))throw java.io.IOException("Update integrity verification failed")
+        onProgress(1f)
     }
 
 }

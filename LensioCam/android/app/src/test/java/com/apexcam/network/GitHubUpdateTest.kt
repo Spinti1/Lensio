@@ -4,6 +4,29 @@ import org.junit.Test
 class GitHubUpdateTest {
  private fun release(url:String="https://github.com/Spinti1/Lensio/releases/download/v99.0.0/LensioCam.apk",digest:String="sha256:"+"a".repeat(64),draft:Boolean=false,version:String="99.0.0")="""{"tag_name":"v$version","draft":$draft,"prerelease":false,"body":"Update","assets":[{"name":"LensioCam.apk","size":123,"browser_download_url":"$url","digest":"$digest"}]}"""
  @Test fun acceptsStableNewerRelease(){val info=UpdateChecker.parseGitHubRelease(release());assertNotNull(info);assertEquals(64,info!!.sha256.length)}
+ @Test fun browserFallbackTargetsOnlyTheOfferedReleaseApk(){
+  assertEquals("https://github.com/Spinti1/Lensio/releases/download/v2.11.14/LensioCam.apk",UpdateChecker.trustedApkUrl("2.11.14"))
+  for(version in listOf("../../other","2.11.14?redirect=evil","2.11.14/another.apk","https://example.com"))assertNull(UpdateChecker.trustedApkUrl(version))
+ }
+ @Test fun downloadNeverReportsCompletionBeforeIntegrityChecks()=kotlinx.coroutines.runBlocking {
+  val data=ByteArray(100000){42}
+  val progress=mutableListOf<Float>()
+  try {UpdateChecker.copyVerifiedApk(data.inputStream(),java.io.ByteArrayOutputStream(),data.size.toLong(),"0".repeat(64)){progress.add(it)};fail("Accepted corrupt download")}
+  catch(_:java.io.IOException){}
+  assertTrue(progress.isNotEmpty())
+  assertTrue(progress.all{it<1f})
+  val hash=java.security.MessageDigest.getInstance("SHA-256").digest(data).joinToString(""){"%02x".format(it)}
+  progress.clear()
+  UpdateChecker.copyVerifiedApk(data.inputStream(),java.io.ByteArrayOutputStream(),data.size.toLong(),hash){progress.add(it)}
+  assertEquals(1f,progress.last())
+  assertTrue(progress.dropLast(1).all{it<1f})
+ }
+ @Test fun installerErrorsDescribeStorageAndPermissionFailures(){
+  assertTrue(UpdateInstaller.failureMessage(android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE).contains("space"))
+  assertTrue(UpdateInstaller.failureMessage(android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED).contains("permissions"))
+  assertTrue(UpdateInstaller.failureMessage(android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED).contains("retry"))
+  assertTrue(UpdateInstaller.failureMessage(12345).contains("GitHub APK"))
+ }
  @Test fun doesNotOfferTheInstalledReleaseAgain(){
   assertNull(UpdateChecker.parseGitHubRelease(release(),"99.0.0"))
   assertNull(UpdateChecker.parseGitHubRelease(release(),"99.0.1"))

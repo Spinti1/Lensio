@@ -37,7 +37,11 @@ fun CameraScreen(
     availableUpdate: VersionInfo? = null,
     isDownloadingUpdate: Boolean = false,
     downloadProgress: Float = 0f,
+    updateStatus: String = "",
+    updateError: String? = null,
+    installerPending: Boolean = false,
     onStartUpdate: () -> Unit = {},
+    onOpenUpdateApk: () -> Unit = {},
     onDismissUpdate: () -> Unit = {},
     onCheckUpdate: () -> Unit = {},
     onManualConnect: (String) -> Unit,
@@ -263,32 +267,55 @@ fun CameraScreen(
                         fontSize = 11.5.sp
                     )
 
-                    if (isDownloadingUpdate) {
+                    if (updateError != null) {
+                        Text(updateError, color = Color(0xFFFDA4AF), fontSize = 11.sp,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (isDownloadingUpdate || installerPending) {
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            LinearProgressIndicator(
-                                progress = { downloadProgress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Color(0xFF10B981),
-                                trackColor = Color(0xFF334155)
-                            )
+                            if (updateStatus == "Downloading update…") {
+                                LinearProgressIndicator(
+                                    progress = { downloadProgress },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFF10B981),
+                                    trackColor = Color(0xFF334155)
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFF10B981),
+                                    trackColor = Color(0xFF334155)
+                                )
+                            }
                             Text(
-                                text = "Downloading: ${(downloadProgress * 100).toInt()}%...",
+                                text = if (updateStatus == "Downloading update…") "Downloading: ${(downloadProgress * 100).toInt()}%"
+                                    else updateStatus.ifEmpty { "Preparing update…" },
                                 color = Color(0xFF10B981),
                                 fontSize = 11.sp
                             )
                         }
-                    } else {
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = onStartUpdate,
+                            enabled = !isDownloadingUpdate && !installerPending,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4269EB)),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
-                            Text("Install update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Install update", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = onOpenUpdateApk,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Text("GitHub APK", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     }
                 }
